@@ -1,0 +1,316 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Brand Colors ──────────────────────────────── */
+  --color-primary: #1E293B;
+  /* dark slate     */
+  --color-primary-80: #334155;
+  /* slightly lighter slate */
+  --color-primary-60: #475569;
+  /* slate-600      */
+  --color-primary-40: #64748B;
+  /* slate-500      */
+  --color-primary-20: #94A3B8;
+  /* slate-400      */
+  --color-primary-10: #CBD5E1;
+  /* slate-300      */
+  --color-primary-05: #E2E8F0;
+  /* slate-200      */
+
+  --color-bg: #F8FAFC;
+  /* main page bg   */
+  --color-surface: #FFFFFF;
+  /* card / panel   */
+  --color-border: #E2E8F0;
+  /* dividers       */
+  --color-border-dark: #CBD5E1;
+
+  --color-accent: #3B82F6;
+  /* blue-500       */
+  --color-accent-dark: #2563EB;
+  /* blue-600       */
+  --color-accent-light: #EFF6FF;
+  /* blue-50        */
+  --color-accent-mid: #DBEAFE;
+  /* blue-100       */
+
+  --color-success: #22C55E;
+  /* green-500      */
+  --color-success-bg: #F0FDF4;
+  /* green-50       */
+
+  --color-alert: #EF4444;
+  /* red-500        */
+  --color-alert-dark: #DC2626;
+  /* red-600        */
+  --color-alert-bg: #FEF2F2;
+  /* red-50         */
+
+  --color-warning: #F59E0B;
+  /* amber-500      */
+  --color-warning-bg: #FFFBEB;
+  /* amber-50       */
+
+  /* ── Typography ─────────────────────────────── */
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  /* ── Radius ──────────────────────────────────── */
+  --radius-card: 12px;
+  --radius-btn: 8px;
+}
+
+/* ── Base ───────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-primary);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary-10);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+
+/* ── Cards ──────────────────────────────────────── */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--color-accent-light);
+  box-shadow: 0 4px 16px rgba(30, 41, 59, 0.08);
+}
+
+/* ── Buttons ────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.625rem 1.25rem;
+  border: none;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-dark);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  color: var(--color-primary-60);
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 0.625rem 1.25rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg);
+  border-color: var(--color-primary-20);
+  color: var(--color-primary);
+}
+
+/* ── Inputs ─────────────────────────────────────── */
+.input {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border-dark);
+  border-radius: var(--radius-btn);
+  color: var(--color-primary);
+  font-size: 0.9rem;
+  padding: 0.65rem 1rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: var(--font-sans);
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.input::placeholder {
+  color: var(--color-primary-20);
+}
+
+select.input {
+  appearance: none;
+  cursor: pointer;
+}
+
+/* ── Badges ─────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.badge-low {
+  background: var(--color-success-bg);
+  color: #16A34A;
+}
+
+.badge-medium {
+  background: var(--color-warning-bg);
+  color: #D97706;
+}
+
+.badge-high {
+  background: var(--color-alert-bg);
+  color: var(--color-alert);
+}
+
+.badge-critical {
+  background: var(--color-alert-bg);
+  color: var(--color-alert-dark);
+  border: 1px solid #FECACA;
+}
+
+.badge-blue {
+  background: var(--color-accent-mid);
+  color: var(--color-accent-dark);
+}
+
+/* ── Animations ─────────────────────────────────── */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.35s ease both;
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+      #E2E8F0 25%,
+      #CBD5E1 50%,
+      #E2E8F0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* ── Layout ─────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 240px;
+  background: var(--color-primary);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+}
+
+.main-content {
+  margin-left: 240px;
+  min-height: 100vh;
+  padding: 2rem;
+  background: var(--color-bg);
+}
+
+/* ── Proctoring recording indicator ─────────────── */
+.recording-ring {
+  position: relative;
+  display: inline-flex;
+}
+
+.recording-ring::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--color-alert);
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+/* ── Dividers & helpers ─────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 1rem 0;
+}
