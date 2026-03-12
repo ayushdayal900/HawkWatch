@@ -93,6 +93,7 @@ export default function ExamListPage() {
             .finally(() => setLoading(false));
     };
 
+    // eslint-disable-next-line
     useEffect(() => { load(); }, []);
 
     const handleAction = async (action, exam) => {

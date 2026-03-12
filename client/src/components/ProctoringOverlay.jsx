@@ -2,7 +2,23 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, CameraOff, AlertTriangle, CheckCircle, Activity, Eye } from 'lucide-react';
 import { proctoringAPI } from '../services/api';
 
-const FRAME_INTERVAL_MS = 3000;
+import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
+const FRAME_INTERVAL_MS = 5000;
+
+// Placeholder functions for local detection
+// eslint-disable-next-line no-unused-vars
+const detectFacePresence = (_frame) => {
+    // Placeholder logic — replace with real ML model
+    return true;
+};
+
+// eslint-disable-next-line no-unused-vars
+const detectMultipleFaces = (_frame) => {
+    // Placeholder logic — replace with real ML model
+    return false;
+};
 
 const flagSeverityStyle = {
     low: { background: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0' },
@@ -11,7 +27,8 @@ const flagSeverityStyle = {
     critical: { background: '#FEF2F2', color: '#DC2626', border: '1px solid #EF4444', fontWeight: 700 },
 };
 
-export default function ProctoringOverlay({ sessionId, onSessionTerminated }) {
+export default function ProctoringOverlay({ sessionId, examId, onSessionTerminated }) {
+    const { user } = useAuth();
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
@@ -24,6 +41,17 @@ export default function ProctoringOverlay({ sessionId, onSessionTerminated }) {
     const [deepfakeScore, setDeepfakeScore] = useState(0);
     const [framesAnalyzed, setFramesAnalyzed] = useState(0);
     const [tabSwitches, setTabSwitches] = useState(0);
+
+    // ── Tracking util ────────────────────────────────
+    const trackEvent = useCallback((eventType) => {
+        if (!examId || !user?._id) return;
+        api.post('/proctor/event', {
+            studentId: user._id,
+            examId,
+            eventType,
+            timestamp: new Date().toISOString()
+        }).catch(() => {});
+    }, [examId, user]);
 
     // ── Camera ───────────────────────────────────────
     useEffect(() => {
@@ -40,6 +68,7 @@ export default function ProctoringOverlay({ sessionId, onSessionTerminated }) {
         };
         startCam();
         return () => streamRef.current?.getTracks().forEach((t) => t.stop());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ── Frame capture ────────────────────────────────
@@ -51,11 +80,23 @@ export default function ProctoringOverlay({ sessionId, onSessionTerminated }) {
         c.height = v.videoHeight || 480;
         c.getContext('2d').drawImage(v, 0, 0);
         const frameB64 = c.toDataURL('image/jpeg', 0.7).split(',')[1];
+        const hasFace = detectFacePresence(frameB64);
+        const multipleFaces = detectMultipleFaces(frameB64);
+
+        if (!hasFace) {
+            trackEvent('FACE_MISSING');
+            setAlerts((p) => [{ id: Date.now(), text: 'Face not detected', severity: 'critical' }, ...p].slice(0, 8));
+        }
+
+        if (multipleFaces) {
+            trackEvent('MULTIPLE_FACES');
+            setAlerts((p) => [{ id: Date.now(), text: 'Multiple faces detected', severity: 'high' }, ...p].slice(0, 8));
+        }
 
         try {
             const { data } = await proctoringAPI.analyzeFrame(sessionId, frameB64);
             const r = data.result;
-            setFaceDetected(r.faceDetected ?? true);
+            setFaceDetected(r.faceDetected ?? hasFace);
             setDeepfakeScore(r.deepfakeScore ?? 0);
             setFramesAnalyzed((n) => n + 1);
             setRiskScore(data.riskScore ?? 0);
@@ -66,6 +107,7 @@ export default function ProctoringOverlay({ sessionId, onSessionTerminated }) {
             }
             if (data.terminated) onSessionTerminated?.('Exceeded flag threshold');
         } catch { /* network issue — continue */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, onSessionTerminated]);
 
     useEffect(() => {
@@ -74,17 +116,76 @@ export default function ProctoringOverlay({ sessionId, onSessionTerminated }) {
         return () => clearInterval(intervalRef.current);
     }, [camStatus, sessionId, captureAndAnalyze]);
 
-    // ── Tab switch ───────────────────────────────────
+    // ── Behavioral Monitoring ────────────────────────
+
+    // 1. Tab switch
     useEffect(() => {
         const handle = () => {
-            if (!document.hidden || !sessionId) return;
-            setTabSwitches((n) => n + 1);
-            proctoringAPI.flagEvent(sessionId, { type: 'tab_switch', severity: 'high', confidence: 1.0 });
-            setAlerts((p) => [{ id: Date.now(), text: 'Tab switch detected', severity: 'high' }, ...p].slice(0, 8));
+            if (document.hidden) {
+                setTabSwitches((n) => n + 1);
+                trackEvent('TAB_SWITCH');
+                if (sessionId) proctoringAPI.flagEvent(sessionId, { type: 'tab_switch', severity: 'high', confidence: 1.0 });
+                setAlerts((p) => [{ id: Date.now(), text: 'Tab switch detected', severity: 'high' }, ...p].slice(0, 8));
+            }
         };
         document.addEventListener('visibilitychange', handle);
         return () => document.removeEventListener('visibilitychange', handle);
-    }, [sessionId]);
+    }, [sessionId, trackEvent]);
+
+    // 2. Inactivity (> 15s)
+    useEffect(() => {
+        let lastActivity = Date.now();
+        const updateActivity = () => { lastActivity = Date.now(); };
+        
+        window.addEventListener('mousemove', updateActivity);
+        window.addEventListener('keydown', updateActivity);
+
+        const checkInactivity = setInterval(() => {
+            if (Date.now() - lastActivity > 15000) {
+                trackEvent('INACTIVITY');
+                setAlerts((p) => [{ id: Date.now(), text: 'Inactivity detected', severity: 'medium' }, ...p].slice(0, 8));
+                updateActivity(); // reset after logging
+            }
+        }, 5000);
+
+        return () => {
+            window.removeEventListener('mousemove', updateActivity);
+            window.removeEventListener('keydown', updateActivity);
+            clearInterval(checkInactivity);
+        };
+    }, [trackEvent]);
+
+    // 3 & 4. Keystroke timing & Mouse movement frequency
+    useEffect(() => {
+        let lastKeyTime = Date.now();
+        let lastMouseTime = Date.now();
+
+        const handleKeyDown = () => {
+            const now = Date.now();
+            const interval = now - lastKeyTime; // measured keystroke interval
+            if (interval > 500) { // Throttle sending to backend to avoid flooding API
+                trackEvent('KEYSTROKE_TIMING');
+                lastKeyTime = now;
+            }
+        };
+
+        const handleMouseMove = () => {
+            const now = Date.now();
+            const interval = now - lastMouseTime; // measured mouse movement frequency
+            if (interval > 2000) { // Throttle sending to backend to avoid flooding API
+                trackEvent('MOUSE_MOVEMENT');
+                lastMouseTime = now;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('mousemove', handleMouseMove);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('mousemove', handleMouseMove);
+        };
+    }, [trackEvent]);
 
     // ── Block right-click & copy/paste ──────────────
     useEffect(() => {

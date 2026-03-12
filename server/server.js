@@ -17,6 +17,8 @@ const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/auth.routes');
 const examRoutes = require('./routes/exam.routes');
 const proctoringRoutes = require('./routes/proctoring.routes');
+const proctorRoutes = require('./routes/proctor.routes');
+const verificationRoutes = require('./routes/verification.routes');
 
 // ─── App Setup ───────────────────────────────────────────────────────────────
 const app = express();
@@ -95,6 +97,8 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/proctoring', proctoringRoutes);
+app.use('/api/proctor', proctorRoutes);
+app.use('/api/verification', verificationRoutes);
 
 // 404 handler
 app.use((req, res) => {

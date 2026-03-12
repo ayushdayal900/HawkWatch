@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import { examAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { BarChart3, Users, BookOpen, ShieldCheck, TrendingUp, AlertCircle, Clock } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { io } from 'socket.io-client';
+import StudentMonitorCard from '../components/StudentMonitorCard';
+import AlertLogTable from '../components/AlertLogTable';
+import api from '../services/api';
 
 const chartData = [
     { date: 'Mon', attempts: 12, flags: 3 },
@@ -16,7 +20,8 @@ const chartData = [
     { date: 'Sun', attempts: 17, flags: 6 },
 ];
 
-function StatCard({ icon: Icon, label, value, sub, color = '#3B82F6', trend }) {
+// eslint-disable-next-line no-unused-vars
+function StatCard({ icon: Icon, label, value, sub, color = '#3B82F6' }) {
     return (
         <div className="card animate-fade-up" style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
             <div style={{
@@ -36,16 +41,52 @@ function StatCard({ icon: Icon, label, value, sub, color = '#3B82F6', trend }) {
 }
 
 export default function DashboardPage() {
-    const { user } = useAuth();
+    // eslint-disable-next-line no-unused-vars
+    const { user, isExaminer, isAdmin } = useAuth();
     const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [liveEvents, setLiveEvents] = useState([]);
 
     useEffect(() => {
         examAPI.getAll()
             .then((r) => setExams(r.data.data || []))
-            .catch(() => { })
+            .catch(() => {})
             .finally(() => setLoading(false));
     }, []);
+
+    useEffect(() => {
+        if ((isExaminer || isAdmin) && exams.length > 0) {
+            const activeExamId = exams[0]._id; // Monitoring first exam for simplicity
+            
+            api.get(`/proctor/events/${activeExamId}`).then(res => setLiveEvents(res.data.data)).catch(() => {});
+
+            const socket = io(import.meta.env.VITE_APP_URL || 'http://localhost:5000');
+            socket.emit('join-proctor-room', { sessionId: activeExamId });
+
+            socket.on('student-event', (data) => {
+                setLiveEvents(prev => [data.event, ...prev]);
+            });
+
+            return () => socket.disconnect();
+        }
+    }, [exams, isExaminer, isAdmin]);
+
+    const activeStudentsData = useMemo(() => {
+        const map = {};
+        liveEvents.forEach(e => {
+            const sid = e.studentId._id || e.studentId;
+            if (!map[sid]) map[sid] = { studentId: sid, events: [], riskScore: 0 };
+            map[sid].events.push(e);
+            map[sid].riskScore += (e.riskWeight || 0);
+        });
+
+        return Object.values(map).map(s => {
+            if (s.riskScore >= 20) s.riskLevel = 'HIGH';
+            else if (s.riskScore >= 10) s.riskLevel = 'MEDIUM';
+            else s.riskLevel = 'LOW';
+            return s;
+        });
+    }, [liveEvents]);
 
     const published = exams.filter((e) => e.status === 'published').length;
 
@@ -147,6 +188,32 @@ export default function DashboardPage() {
                         </div>
                     ))}
                 </div>
+
+                {/* ── Admin / Examiner Section: Live Monitor ────────────────── */}
+                {(isExaminer || isAdmin) && (
+                    <div style={{ marginTop: '2rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                            <ShieldCheck size={20} color="#3B82F6" />
+                            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>Live Monitor</h3>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', alignItems: 'start' }}>
+                            <div>
+                                <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#64748B', marginBottom: '1rem' }}>Active Students & Risk Scores</h4>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {activeStudentsData.length === 0 ? (
+                                        <div style={{ color: '#94A3B8', fontSize: '0.85rem' }}>No active participants monitored.</div>
+                                    ) : activeStudentsData.map(student => (
+                                        <StudentMonitorCard key={student.studentId} {...student} />
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#64748B', marginBottom: '1rem' }}>Flagged Alerts Log</h4>
+                                <AlertLogTable events={liveEvents} />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );

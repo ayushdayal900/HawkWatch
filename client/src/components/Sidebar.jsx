@@ -90,6 +90,7 @@ export default function Sidebar() {
                 <div style={{ fontSize: '0.65rem', color: C.text, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0.25rem 0.5rem', marginBottom: '0.25rem' }}>
                     Menu
                 </div>
+                {/* eslint-disable-next-line no-unused-vars */}
                 {items.map(({ to, icon: Icon, label }) => (
                     <NavLink
                         key={to}

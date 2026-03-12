@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { examAPI, proctoringAPI } from '../services/api';
 import ProctoringOverlay from '../components/ProctoringOverlay';
@@ -23,9 +23,11 @@ export default function ExamRoomPage() {
 
     const [exam, setExam] = useState(null);
     const [sessionId, setSessionId] = useState(null);
+    // eslint-disable-next-line no-unused-vars
     const [attemptId, setAttemptId] = useState(null);
     const [currentQ, setCurrentQ] = useState(0);
     const [answers, setAnswers] = useState({});
+    // eslint-disable-next-line no-unused-vars
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [phase, setPhase] = useState('loading'); // loading | ready | exam | submitted | terminated
@@ -40,11 +42,14 @@ export default function ExamRoomPage() {
             .then((r) => { setExam(r.data.data); setPhase('ready'); })
             .catch(() => { toast.error('Failed to load exam.'); navigate('/exams'); })
             .finally(() => setLoading(false));
-    }, [id]);
+    }, [id, navigate]);
 
     // Auto-submit on time up
     useEffect(() => {
-        if (phase === 'exam' && remaining === 0) handleSubmit(true);
+        if (phase === 'exam' && remaining === 0) {
+            handleSubmit(true);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [remaining, phase]);
 
     const startExam = async () => {
@@ -52,7 +57,7 @@ export default function ExamRoomPage() {
             const { data } = await proctoringAPI.startSession({ examId: id, attemptId: null });
             setSessionId(data.data._id);
             setPhase('exam');
-        } catch (err) {
+        } catch {
             toast.error('Could not start proctoring session.');
         }
     };

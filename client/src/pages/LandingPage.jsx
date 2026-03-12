@@ -102,6 +102,7 @@ export default function LandingPage() {
             {/* Feature cards */}
             <section style={{ maxWidth: 1100, margin: '0 auto', padding: '0 2rem 4rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1.25rem' }}>
+                    {/* eslint-disable-next-line no-unused-vars */}
                     {features.map(({ icon: Icon, title, desc, color }) => (
                         <div key={title} className="card animate-fade-up">
                             <div style={{

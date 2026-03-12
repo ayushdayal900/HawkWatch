@@ -4,7 +4,10 @@ const questionSchema = new mongoose.Schema(
     {
         stem: {
             type: String,
-            required: [true, 'Question stem is required'],
+        },
+        questionText: {
+            type: String,
+            required: [true, 'Question text is required'],
         },
         type: {
             type: String,
@@ -70,6 +73,8 @@ const examSchema = new mongoose.Schema(
         },
         scheduledStart: Date,
         scheduledEnd: Date,
+        startTime: Date,
+        endTime: Date,
         allowedAttempts: {
             type: Number,
             default: 1,
