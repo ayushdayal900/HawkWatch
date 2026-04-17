@@ -127,8 +127,31 @@ const analyzeFrame = async (req, res, next) => {
             session.flagCount += 1;
         }
 
+        // Recompute risk score based on new flags and frame analysis
+        const riskScore = await aiService.computeRiskScore(session);
+        session.riskScore = riskScore;
+
         await session.save();
-        res.status(200).json({ success: true, result, flagsGenerated: flags.length });
+
+        // Emit socket event if new flags were generated
+        if (flags.length > 0) {
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`proctor:${session._id}`).emit('flag-event', { 
+                    sessionId: session._id, 
+                    flags, 
+                    riskScore: session.riskScore, 
+                    student: session.student 
+                });
+            }
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            result, 
+            flagsGenerated: flags.length,
+            riskScore: session.riskScore
+        });
     } catch (error) {
         next(error);
     }

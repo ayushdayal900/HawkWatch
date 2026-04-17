@@ -272,7 +272,7 @@ export default function StudentExamPage() {
                                             onChange={() => handleAnswer(activeQ._id, String(i))}
                                             style={{ width: 18, height: 18, cursor: 'pointer' }}
                                         />
-                                        <span style={{ fontSize: '1rem', color: '#334155' }}>{opt}</span>
+                                        <span style={{ fontSize: '1rem', color: '#334155' }}>{opt.text || opt.label || opt}</span>
                                     </label>
                                 ))}
                             </div>

@@ -49,7 +49,7 @@ const register = async (req, res, next) => {
     if (!errors.isEmpty()) return sendValidationErrors(res, errors);
 
     try {
-        const { name, email, password, institution } = req.body;
+        const { name, email, password, institution, organization } = req.body;
 
         // Role guard: public sign-up can only be student or examiner.
         // Admin can only be set by another admin (not implemented here yet).
@@ -67,7 +67,14 @@ const register = async (req, res, next) => {
         }
 
         // 3 — Create user (password hashed by pre-save hook in User model)
-        const user = await User.create({ name, email, password, role, institution });
+        const user = await User.create({ 
+            name, 
+            email, 
+            password, 
+            role, 
+            institution,
+            organization: organization || null
+        });
 
         // 4 — Issue tokens
         const { accessToken, refreshToken } = generateTokens(user);

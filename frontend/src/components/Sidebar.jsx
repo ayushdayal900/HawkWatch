@@ -33,7 +33,7 @@ const navItems = {
         { to: '/exams',       icon: BookOpen,        label: 'Manage Exams'    },
         { to: '/monitoring',  icon: Eye,             label: 'Monitor Sessions'},
         { to: '/results',     icon: BarChart3,       label: 'Reports'         },
-        { to: '/admin',       icon: Users,           label: 'User Management' },
+        { to: '/admin',       icon: Users,           label: 'Organizations' },
         { to: '/settings',    icon: Settings,        label: 'Settings'        },
     ],
 };

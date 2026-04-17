@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { organizationAPI } from '../services/api';
 import {
     Eye, EyeOff, ShieldCheck,
     AlertCircle, CheckCircle2, Loader2,
@@ -81,12 +82,28 @@ export default function RegisterPage() {
     const navigate     = useNavigate();
 
     const [form, setForm] = useState({
-        name: '', email: '', institution: '',
+        name: '', email: '', organization: '',
         password: '', role: 'student',
     });
+    const [organizations, setOrganizations] = useState([]);
+    const [fetchingOrgs, setFetchingOrgs] = useState(true);
     const [showPwd, setShowPwd] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errors,  setErrors]  = useState({});
+
+    useEffect(() => {
+        const fetchOrgs = async () => {
+            try {
+                const { data } = await organizationAPI.getAll();
+                setOrganizations(data.data || []);
+            } catch (err) {
+                console.error('Failed to fetch organizations:', err);
+            } finally {
+                setFetchingOrgs(false);
+            }
+        };
+        fetchOrgs();
+    }, []);
 
     /* ── Client-side validation ────────────────────────────────────── */
     const validate = () => {
@@ -113,7 +130,7 @@ export default function RegisterPage() {
                 email:       form.email.trim(),
                 password:    form.password,
                 role:        form.role,
-                institution: form.institution.trim() || undefined,
+                organization: form.organization === 'individual' || form.organization === '' ? null : form.organization,
             });
             toast.success('Account created! Welcome to HawkWatch. 🦅');
             navigate('/dashboard', { replace: true });
@@ -223,19 +240,27 @@ export default function RegisterPage() {
                             </div>
                         </div>
 
-                        {/* Institution */}
+                        {/* Organization Dropdown */}
                         <div>
                             <label style={labelStyle}>
-                                Institution
+                                Organization
                                 <span style={{ fontWeight: 400, color: '#94A3B8', marginLeft: 4 }}>(optional)</span>
                             </label>
-                            <input
-                                id="reg-institution"
+                            <select
+                                id="reg-organization"
                                 className="input"
-                                type="text"
-                                placeholder="University / Organisation"
-                                {...field('institution')}
-                            />
+                                disabled={fetchingOrgs}
+                                style={{ appearance: 'auto', backgroundColor: '#fff' }}
+                                {...field('organization')}
+                            >
+                                <option value="">Select Organization...</option>
+                                <option value="individual">Individual (No Organization)</option>
+                                {organizations.map((org) => (
+                                    <option key={org._id} value={org._id}>
+                                        {org.name} {org.code ? `(${org.code})` : ''}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Password */}

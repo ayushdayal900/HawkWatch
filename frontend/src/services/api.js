@@ -141,7 +141,6 @@ export const proctoringAPI = {
     getActiveSessions: ()                   => api.get ('/proctoring/active'),
 };
 
-/* ─── Verification API ──────────────────────────────────────────────── */
 export const verificationAPI = {
     start:       (data) => api.post('/verification/start', data),
     verifyId:    (data) => api.post('/verification/id', data),
@@ -149,6 +148,12 @@ export const verificationAPI = {
     face:        (data) => api.post('/verification/face', data),
     environment: (data) => api.post('/verification/environment', data),
     getStatus:   (id)   => api.get(`/verification/status/${id}`),
+};
+
+/* ─── Organization API ──────────────────────────────────────────────── */
+export const organizationAPI = {
+    getAll: () => api.get('/organizations'),
+    create: (data) => api.post('/organizations', data),
 };
 
 export default api;

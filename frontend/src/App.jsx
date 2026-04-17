@@ -15,6 +15,7 @@ import StudentExamPage   from './pages/StudentExamPage';
 import MonitoringPage    from './pages/MonitoringPage';
 import ResultsPage       from './pages/ResultsPage';
 import ExamVerification  from './pages/ExamVerification';
+import AdminPage         from './pages/AdminPage';
 
 export default function App() {
     return (
@@ -58,7 +59,7 @@ export default function App() {
 
                     {/* ── Admin-only routes ────────────────────────────── */}
                     <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
-                        {/* <Route path="/admin" element={<AdminPage />} /> */}
+                        <Route path="/admin" element={<AdminPage />} />
                     </Route>
 
                     {/* ── Examiner + Admin only ────────────────────────── */}

@@ -46,6 +46,11 @@ const userSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
+        organization: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Organization',
+            default: null,
+        },
         isVerified: {
             type: Boolean,
             default: false,

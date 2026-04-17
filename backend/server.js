@@ -18,6 +18,7 @@ const authRoutes = require('./routes/auth.routes');
 const examRoutes = require('./routes/exam.routes');
 const proctoringRoutes = require('./routes/proctoring.routes');
 const verificationRoutes = require('./routes/verification.routes');
+const organizationRoutes = require('./routes/organization.routes');
 
 // ─── App Setup ───────────────────────────────────────────────────────────────
 const app = express();
@@ -107,6 +108,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/proctoring', proctoringRoutes);
 app.use('/api/verification', verificationRoutes);
+app.use('/api/organizations', organizationRoutes);
 
 // 404 handler
 app.use((req, res) => {

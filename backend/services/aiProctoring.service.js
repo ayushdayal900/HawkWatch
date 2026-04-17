@@ -46,11 +46,14 @@ async function analyzeFrame(frameBase64, sessionId) {
         return data;
     } catch (err) {
         logger.warn(`AI service unreachable, returning stub frame result: ${err.message}`);
+        // For local testing without the Python service, randomly simulate some events
+        const randomSimulate = Math.random();
+        
         // Stub response matching production schema
         return {
             faceDetected: true,
             faceCount: 1,
-            multipleFaces: false,
+            multipleFaces: randomSimulate > 0.95,
             faceConfidence: 0.95,
             landmarks: [],          // 468 MediaPipe face mesh landmarks
             headPose: {             // Euler angles from OpenCV solvePnP
@@ -59,10 +62,10 @@ async function analyzeFrame(frameBase64, sessionId) {
                 roll: 0.8,
             },
             gazeVector: { x: 0.01, y: 0.02 },
-            gazeDeviation: false,
+            gazeDeviation: randomSimulate > 0.8 && randomSimulate <= 0.9,
             deepfakeScore: 0.04,    // 0 = real, 1 = fake
             deepfakeDetected: false,
-            phoneDetected: false,
+            phoneDetected: randomSimulate > 0.7 && randomSimulate <= 0.8,
             personAbsent: false,
             processingMs: 24,
         };
@@ -238,7 +241,7 @@ async function computeRiskScore(session) {
         faceAbsenceRate * 20 +
         deepfakeAvg * 30 +
         behavioralAnomaly * 15 +
-        flagScore * 35 * 100 // Scale up mapped
+        flagScore * 35
     );
 
     return Math.min(Math.round(riskScore), 100);
