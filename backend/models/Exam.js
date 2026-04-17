@@ -97,6 +97,16 @@ const examSchema = new mongoose.Schema(
         ],
         tags: [String],
         category: String,
+        accessType: {
+            type: String,
+            enum: ['public', 'organization'],
+            default: 'public',
+        },
+        organization: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Organization',
+            default: null,
+        },
     },
     {
         timestamps: true,

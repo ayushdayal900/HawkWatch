@@ -26,6 +26,7 @@ const navItems = {
         { to: '/create-exam', icon: Plus,            label: 'Create Exam'     },
         { to: '/exams',       icon: BookOpen,        label: 'Manage Exams'    },
         { to: '/monitoring',  icon: Eye,             label: 'Monitor Sessions'},
+        { to: '/admin',       icon: Users,           label: 'Organizations'   },
     ],
     admin: [
         { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard'       },

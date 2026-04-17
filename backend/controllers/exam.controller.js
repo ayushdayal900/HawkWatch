@@ -90,7 +90,14 @@ const getExams = async (req, res, next) => {
         const filter = {};
         const { role, _id } = req.user;
 
-        if (role === 'student')  filter.status = 'published';
+        if (role === 'student') {
+            filter.status = 'published';
+            // Only see public exams or exams restricted to the student's organization
+            filter.$or = [
+                { accessType: 'public' },
+                { accessType: 'organization', organization: req.user.organization }
+            ];
+        }
         if (role === 'examiner') filter.createdBy = _id;
         // admin: no filter — sees everything
 
@@ -151,7 +158,7 @@ const getExam = async (req, res, next) => {
  * ───────────────────────────────────────────────────────────────────────── */
 const createExam = async (req, res, next) => {
     try {
-        const { title, description, instructions, duration, passingMarks, questions, proctoring, tags, category } = req.body;
+        const { title, description, instructions, duration, passingMarks, questions, proctoring, tags, category, accessType, organization } = req.body;
 
         if (!title?.trim()) {
             return res.status(422).json({ success: false, message: 'Exam title is required.' });
@@ -170,6 +177,8 @@ const createExam = async (req, res, next) => {
             proctoring,
             tags,
             category,
+            accessType: accessType || 'public',
+            organization: accessType === 'organization' ? organization || req.user.organization : null,
             createdBy: req.user._id,
             status:    'draft',
         });

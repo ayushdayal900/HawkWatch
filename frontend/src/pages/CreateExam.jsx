@@ -3,12 +3,13 @@
  * Full exam builder: details → question builder → preview → save/publish.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
-import { examAPI } from '../services/api';
+import { examAPI, organizationAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 import {
     Plus, Trash2, Save, Send, ChevronDown, ChevronUp,
     BookOpen, Clock, Target, Shield, CheckCircle,
@@ -230,9 +231,23 @@ export default function CreateExam() {
         instructions: '',
         duration:     60,
         passingMarks: 0,
+        accessType:   'public',
+        organization: '',
         questions:    [],
         proctoring:   { ...defaultProctoring },
     });
+    const [organizations, setOrganizations] = useState([]);
+    const { user } = useAuth();
+
+    useEffect(() => {
+        const fetchOrgs = async () => {
+            try {
+                const { data } = await organizationAPI.getAll();
+                setOrganizations(data.data || []);
+            } catch (err) {}
+        };
+        fetchOrgs();
+    }, []);
 
     /* ── Derived stats ─────────────────────────────────────────────── */
     const totalMarks = useMemo(
@@ -400,6 +415,46 @@ export default function CreateExam() {
                                         style={{ resize: 'vertical' }}
                                     />
                                 </div>
+                            </div>
+                        </SectionCard>
+
+                        {/* Access Settings */}
+                        <SectionCard title="Access Settings" icon={Shield} accent="#8B5CF6">
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Access Level</label>
+                                    <select
+                                        className="input"
+                                        value={form.accessType}
+                                        onChange={(e) => {
+                                            setField('accessType', e.target.value);
+                                            // Reset organization when switching to public
+                                            if (e.target.value === 'public') setField('organization', '');
+                                            // Auto-select user's org if they switch to organization
+                                            if (e.target.value === 'organization' && user?.organization) {
+                                                setField('organization', user.organization);
+                                            }
+                                        }}
+                                    >
+                                        <option value="public">Public (All Access)</option>
+                                        <option value="organization">Organization Only</option>
+                                    </select>
+                                </div>
+                                {form.accessType === 'organization' && (
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Select Organization</label>
+                                        <select
+                                            className="input"
+                                            value={form.organization}
+                                            onChange={(e) => setField('organization', e.target.value)}
+                                        >
+                                            <option value="">-- Choose an Organization --</option>
+                                            {organizations.map(org => (
+                                                <option key={org._id} value={org._id}>{org.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
                         </SectionCard>
 

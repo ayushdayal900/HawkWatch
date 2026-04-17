@@ -7,8 +7,8 @@ const createOrganization = async (req, res, next) => {
     try {
         const { name, code } = req.body;
 
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ success: false, message: 'Only admins can create organizations' });
+        if (!['admin', 'examiner'].includes(req.user.role)) {
+            return res.status(403).json({ success: false, message: 'Only admins and examiners can create organizations' });
         }
 
         const existing = await Organization.findOne({ name });
