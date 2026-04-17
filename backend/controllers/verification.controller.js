@@ -2,6 +2,7 @@ const VerificationSession = require('../models/VerificationSession');
 const VerificationRecord  = require('../models/VerificationRecord');
 const User                = require('../models/User');
 const { analyzeFrame, verifyFaceIdentity } = require('../services/aiProctoring.service');
+const { verifyIDCard } = require('../services/rekognition.service');
 const logger              = require('../utils/logger');
 
 /* ─────────────────────────────────────────────────────────────────
@@ -26,30 +27,38 @@ exports.startSession = async (req, res, next) => {
 
 /* ─────────────────────────────────────────────────────────────────
  * POST /api/verification/id
- * Marks ID as verified (stubbed logic for Phase 3).
+ * Calls AWS Rekognition to check for valid text on the ID card.
  * ───────────────────────────────────────────────────────────────── */
 exports.verifyId = async (req, res, next) => {
     try {
-        const { sessionId } = req.body;
-        if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId required.' });
+        const { sessionId, idImage } = req.body;
+        if (!sessionId || !idImage) return res.status(400).json({ success: false, message: 'sessionId and idImage required.' });
 
         const session = await VerificationSession.findById(sessionId);
         if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
 
-        session.idVerified = true;
-        await session.save();
+        const aiResult = await verifyIDCard(idImage);
+
+        if (aiResult.verified) {
+            session.idVerified = true;
+            await session.save();
+        }
 
         await VerificationRecord.create({
             sessionId,
             studentId:  session.studentId,
             examId:     session.examId,
             step:       'id',
-            passed:     true,
-            confidence: 99.0,
-            details:    { autoVerified: true }
+            passed:     aiResult.verified,
+            confidence: aiResult.confidence,
+            details:    aiResult
         });
 
-        return res.status(200).json({ success: true, message: 'ID Verified successfully.' });
+        return res.status(200).json({ 
+            success: aiResult.verified, 
+            message: aiResult.message,
+            confidence: aiResult.confidence
+        });
     } catch (err) {
         next(err);
     }

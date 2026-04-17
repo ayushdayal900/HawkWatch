@@ -159,7 +159,7 @@ export default function FaceVerification({ sessionId, onVerified, onError }) {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: idImageB64 ? '1fr 1fr' : '1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
                 {/* Live webcam / captured preview */}
                 <div>
                     <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Live / Captured</div>

@@ -16,10 +16,12 @@ export default function LivenessDetector({ sessionId, onVerified }) {
     const videoRef = useRef(null);
     const [camReady, setCamReady] = useState(false);
     
-    // Status trackers for 3 frames
+    // Status trackers for 4 frames
     const [captures, setCaptures] = useState(0); 
     const [passes, setPasses] = useState(0);
     const [status, setStatus] = useState('idle'); // idle | scanning | verified | failed
+
+    const INSTRUCTIONS = ['See Left ⬅️', 'See Right ➡️', 'See Up ⬆️', 'See Down ⬇️'];
 
     useEffect(() => {
         let stream;
@@ -44,9 +46,9 @@ export default function LivenessDetector({ sessionId, onVerified }) {
         let localPasses = passes;
 
         const interval = setInterval(async () => {
-            if (localCaptures >= 3) {
+            if (localCaptures >= 4) {
                 clearInterval(interval);
-                setStatus(localPasses >= 2 ? 'verified' : 'failed');
+                setStatus(localPasses >= 3 ? 'verified' : 'failed');
                 return;
             }
 
@@ -75,12 +77,12 @@ export default function LivenessDetector({ sessionId, onVerified }) {
                     // API Call failure counts as failure
                 }
 
-                if (localCaptures >= 3) {
+                if (localCaptures >= 4) {
                     clearInterval(interval);
-                    setStatus(localPasses >= 2 ? 'verified' : 'failed');
+                    setStatus(localPasses >= 3 ? 'verified' : 'failed');
                 }
             }
-        }, 2000);
+        }, 2200);
 
         return () => clearInterval(interval);
     }, [camReady, status, sessionId]); // Removed captures/passes from dep to prevent re-triggering
@@ -100,7 +102,7 @@ export default function LivenessDetector({ sessionId, onVerified }) {
                 <div>
                     <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>Liveness Verification</h3>
                     <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748B' }}>
-                        Verifying presence using AI Deepfake Detection. Look straight.
+                        Verifying presence using AI Deepfake Detection. Follow the directions.
                     </p>
                 </div>
             </div>
@@ -117,7 +119,8 @@ export default function LivenessDetector({ sessionId, onVerified }) {
                         {status === 'scanning' && (
                             <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                                 <RefreshCw size={24} color="#38BDF8" style={{ animation: 'spin 1.5s linear infinite' }} />
-                                <span style={{ color: '#bae6fd', fontSize: '0.72rem', fontWeight: 600 }}>Capturing Frame {captures + 1}/3</span>
+                                <span style={{ color: '#bae6fd', fontSize: '0.72rem', fontWeight: 600 }}>Capturing Frame {captures + 1}/4</span>
+                                <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700, marginTop: 4 }}>{INSTRUCTIONS[captures] || ''}</span>
                             </div>
                         )}
                         {status === 'verified' && (
@@ -128,16 +131,17 @@ export default function LivenessDetector({ sessionId, onVerified }) {
                     </div>
                 </div>
 
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                    {[1, 2, 3].map(i => {
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {[1, 2, 3, 4].map(i => {
                         const isDone = captures >= i;
                         const hasPassed = isDone && passes >= (i - (captures - passes)); // Approximate representation
+                        const inst = INSTRUCTIONS[i - 1];
 
                         return (
                             <GoalCard
                                 key={i}
                                 icon={<Eye size={18} />}
-                                title={`Frame ${i}`}
+                                title={`Frame ${i} : ${inst.replace(/[\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/ug, '').trim()}`}
                                 desc={!isDone ? 'Waiting to capture...' : hasPassed ? 'Passed AI Check' : 'Failed AI Check'}
                                 isDone={isDone}
                                 isActive={status === 'scanning' && captures === i - 1}

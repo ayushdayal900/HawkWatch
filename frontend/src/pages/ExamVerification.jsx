@@ -317,8 +317,8 @@ export default function ExamVerification() {
 
         switch (step) {
             case 0: return <IDVerification sessionId={sessionId} onVerified={next} onError={() => {}} />;
-            case 1: return <LivenessDetector sessionId={sessionId} onVerified={next} />;
-            case 2: return <FaceVerification sessionId={sessionId} onVerified={next} onError={() => {}} />;
+            case 1: return <FaceVerification sessionId={sessionId} onVerified={next} onError={() => {}} />;
+            case 2: return <LivenessDetector sessionId={sessionId} onVerified={next} />;
             case 3: return <StepEnvironment  sessionId={sessionId} onPass={enterExam} />;
             default: return null;
         }
@@ -327,8 +327,8 @@ export default function ExamVerification() {
     // Collect which steps have passed (for the stepper bar colouring)
     const results = {
         id:          step > 0 ? 'passed' : undefined,
-        liveness:    step > 1 ? 'passed' : undefined,
-        face:        step > 2 ? 'passed' : undefined,
+        face:        step > 1 ? 'passed' : undefined,
+        liveness:    step > 2 ? 'passed' : undefined,
         environment: step > 3 ? 'passed' : undefined,
     };
 

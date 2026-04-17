@@ -80,19 +80,14 @@ export default function useFaceMesh(videoRef) {
 
                 await faceMesh.initialize();
                 faceMeshRef.current = faceMesh;
-                _faceMeshLoaded = true;
                 if (!cancelled) setReady(true);
             } catch (e) {
                 if (!cancelled) setError('Failed to load MediaPipe FaceMesh: ' + e.message);
             }
         }
-        if (!_faceMeshLoaded) {
-            load();
-        } else {
-            // Defer to avoid set-state-in-effect warning
-            const t = setTimeout(() => { if (!cancelled) setReady(true); }, 0);
-            return () => { cancelled = true; clearTimeout(t); };
-        }
+        
+        load();
+        
         return () => { cancelled = true; };
     }, []);
 
