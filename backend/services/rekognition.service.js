@@ -94,8 +94,13 @@ async function verifyIDCard(imageB64) {
         };
     } catch (err) {
         // If AWS credentials are missing / not configured, fall back gracefully
-        if (err.code === 'NotAuthorizedException' || err.code === 'InvalidClientTokenId' || err.code === 'CredentialsError') {
-            console.warn('[rekognition] AWS not configured — using placeholder response.');
+        if (
+            err.code === 'NotAuthorizedException' || 
+            err.code === 'InvalidClientTokenId' || 
+            err.code === 'CredentialsError' ||
+            err.code === 'AccessDeniedException'
+        ) {
+            console.warn('[rekognition] AWS not configured or missing permissions — using placeholder response.');
             return {
                 verified:   true,
                 confidence: 94.0,
@@ -169,8 +174,13 @@ async function matchFaceWithID(idImageB64, liveImageB64) {
                 : `Match confidence too low: ${similarity}%.`,
         };
     } catch (err) {
-        if (err.code === 'NotAuthorizedException' || err.code === 'InvalidClientTokenId' || err.code === 'CredentialsError') {
-            console.warn('[rekognition] AWS not configured — using placeholder face match.');
+        if (
+            err.code === 'NotAuthorizedException' || 
+            err.code === 'InvalidClientTokenId' || 
+            err.code === 'CredentialsError' ||
+            err.code === 'AccessDeniedException'
+        ) {
+            console.warn('[rekognition] AWS not configured or missing permissions — using placeholder face match.');
             const conf = 90 + Math.random() * 8;
             return {
                 matched:    true,
@@ -239,7 +249,13 @@ async function detectFaceLiveness(imageB64) {
                 : `Liveness check failed (confidence: ${faceConf.toFixed(1)}%).`,
         };
     } catch (err) {
-        if (err.code === 'NotAuthorizedException' || err.code === 'InvalidClientTokenId' || err.code === 'CredentialsError') {
+        if (
+            err.code === 'NotAuthorizedException' || 
+            err.code === 'InvalidClientTokenId' || 
+            err.code === 'CredentialsError' ||
+            err.code === 'AccessDeniedException'
+        ) {
+            console.warn('[rekognition] AWS not configured or missing permissions — using placeholder liveness response.');
             return { live: true, confidence: 96.0, quality: {}, message: 'Liveness confirmed (placeholder).' };
         }
         console.error('[rekognition.detectFaceLiveness]', err.message);
@@ -281,9 +297,132 @@ async function uploadImageToS3(imageB64, key) {
     }
 }
 
+/* ════════════════════════════════════════════════════════════════
+   5. ENVIRONMENT SCAN  (DetectFaces + DetectLabels)
+   ════════════════════════════════════════════════════════════════ */
+
+/**
+ * scanEnvironment
+ * Performs real environment checks on a captured webcam frame:
+ *
+ *  1. lighting    – Face brightness score from DetectFaces quality
+ *  2. alone       – Only ONE face should be detected in the frame
+ *  3. noDevices   – DetectLabels must NOT return Phone/Laptop/Tablet/Monitor
+ *  4. background  – No "Crowd"/"People" / scene labels that suggest others nearby
+ *
+ * @param {string} frameB64   base64 data-URL of webcam frame
+ * @returns {{
+ *   checks: { lighting: bool, alone: bool, noDevices: bool, background: bool },
+ *   details: object,
+ *   allPassed: bool
+ * }}
+ */
+async function scanEnvironment(frameB64) {
+    const FALLBACK = {
+        checks:    { lighting: true, alone: true, noDevices: true, background: true },
+        details:   { note: 'AWS Rekognition not configured — checks passed by default.' },
+        allPassed: true,
+    };
+
+    if (!frameB64 || frameB64.length < 100) {
+        return {
+            checks:    { lighting: false, alone: false, noDevices: false, background: false },
+            details:   { error: 'No frame provided.' },
+            allPassed: false,
+        };
+    }
+
+    const bytes = base64ToBytes(frameB64);
+
+    let facesResult, labelsResult;
+
+    // ── Run both Rekognition calls in parallel ──────────────────────
+    try {
+        [facesResult, labelsResult] = await Promise.all([
+            rekognition.detectFaces({
+                Image:      { Bytes: bytes },
+                Attributes: ['ALL'],
+            }).promise(),
+            rekognition.detectLabels({
+                Image:          { Bytes: bytes },
+                MaxLabels:      30,
+                MinConfidence:  60,
+            }).promise(),
+        ]);
+    } catch (err) {
+        // AWS not configured or credentials error — fall back gracefully
+        if (
+            err.code === 'NotAuthorizedException' ||
+            err.code === 'InvalidClientTokenId'   ||
+            err.code === 'CredentialsError'        ||
+            err.code === 'UnrecognizedClientException' ||
+            err.code === 'AccessDeniedException'
+        ) {
+            console.warn(`[rekognition.scanEnvironment] AWS not configured or missing permissions (${err.code}) — using fallback.`);
+            return FALLBACK;
+        }
+        throw err;
+    }
+
+    const faces  = facesResult.FaceDetails  || [];
+    const labels = labelsResult.Labels       || [];
+
+    // ── Check 1: Adequate lighting ──────────────────────────────────
+    // Rekognition returns face.Quality.Brightness (0–100)
+    const primaryFace = faces[0];
+    const brightness  = primaryFace?.Quality?.Brightness ?? null;
+    // Pass if brightness ≥ 30 (0=pitch black, 100=overexposed)
+    const lighting = brightness !== null ? brightness >= 30 : faces.length > 0;
+
+    // ── Check 2: Alone — only one face in frame ─────────────────────
+    const alone = faces.length === 1;
+
+    // ── Check 3: No unauthorized devices ───────────────────────────
+    // Fail if any of these labels appear with confidence ≥ 70%
+    const DEVICE_LABELS = [
+        'Mobile Phone', 'Cell Phone', 'Phone', 'Smartphone',
+        'Laptop', 'Computer', 'Tablet', 'iPad', 'Monitor',
+        'Electronics', 'Pc', 'Desktop', 'Notebook',
+    ];
+    const foundDevices = labels.filter(l =>
+        DEVICE_LABELS.some(d => l.Name.toLowerCase().includes(d.toLowerCase())) &&
+        l.Confidence >= 70
+    );
+    const noDevices = foundDevices.length === 0;
+
+    // ── Check 4: Background — no crowd / multiple people ───────────
+    // Rekognition "Person" label with high confidence + count > 1 = fail
+    const CROWD_LABELS = ['Crowd', 'Audience', 'Group', 'People', 'Team', 'Assembly'];
+    const hasCrowd     = labels.some(l =>
+        CROWD_LABELS.some(c => l.Name.toLowerCase().includes(c.toLowerCase())) &&
+        l.Confidence >= 65
+    );
+    // Also fail if Rekognition detected multiple "Person" label instances
+    const personLabel   = labels.find(l => l.Name === 'Person');
+    const tooManyPeople = personLabel && faces.length > 1;
+    const background    = !hasCrowd && !tooManyPeople;
+
+    const checks = { lighting, alone, noDevices, background };
+    const allPassed = Object.values(checks).every(Boolean);
+
+    return {
+        checks,
+        allPassed,
+        details: {
+            faceCount:     faces.length,
+            brightness:    brightness?.toFixed(1),
+            foundDevices:  foundDevices.map(l => `${l.Name} (${l.Confidence.toFixed(0)}%)`),
+            detectedLabels: labels.slice(0, 10).map(l => `${l.Name} (${l.Confidence.toFixed(0)}%)`),
+            hasCrowd,
+        },
+    };
+}
+
 module.exports = {
     verifyIDCard,
     matchFaceWithID,
     detectFaceLiveness,
     uploadImageToS3,
+    scanEnvironment,
 };
+

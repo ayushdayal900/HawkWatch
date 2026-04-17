@@ -9,6 +9,7 @@
  *
  * Returns:
  *   ready          – true once the model is loaded
+ *   modelLoading   – true while the CDN scripts / WASM are being fetched
  *   results        – latest FaceMesh results object (see MediaPipe docs)
  *   faceDetected   – boolean: at least one face found in last frame
  *   landmarks      – normalised 3-D landmark array from the first face
@@ -41,71 +42,95 @@ export default function useFaceMesh(videoRef) {
     const cameraRef   = useRef(null);
     const frameRef    = useRef(null);
 
-    const [ready,       setReady]       = useState(false);
-    const [error,       setError]       = useState(null);
-    const [results,     setResults]     = useState(null);
+    const [ready,        setReady]        = useState(false);
+    const [modelLoading, setModelLoading] = useState(true);
+    const [error,        setError]        = useState(null);
+    const [results,      setResults]      = useState(null);
     const [faceDetected, setFaceDetected] = useState(false);
-    const [landmarks,   setLandmarks]   = useState(null);
+    const [landmarks,    setLandmarks]    = useState(null);
 
     /* ── Load MediaPipe lazily from CDN ────────────────────────── */
     useEffect(() => {
         let cancelled = false;
-        async function load() {
+
+        async function load(attempt = 1) {
             try {
+                setModelLoading(true);
                 await loadScript(FACE_MESH_CDN);
                 await loadScript(CAMERA_CDN);
 
                 if (cancelled) return;
 
-                // FaceMesh and Camera are injected into window by the CDN scripts above
+                // FaceMesh is injected into window by the CDN scripts above
                 const faceMesh = new window.FaceMesh({
                     locateFile: (file) =>
                         `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
                 });
 
                 faceMesh.setOptions({
-                    maxNumFaces:          1,
-                    refineLandmarks:      true,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence:  0.5,
+                    maxNumFaces:            1,
+                    // refineLandmarks off → faster, more reliable at distance
+                    refineLandmarks:        false,
+                    minDetectionConfidence: 0.3,   // was 0.5 — more lenient
+                    minTrackingConfidence:  0.3,   // was 0.5
                 });
 
                 faceMesh.onResults((res) => {
                     if (cancelled) return;
                     setResults(res);
-                    const detected = res.multiFaceLandmarks?.length > 0;
+                    const detected = Array.isArray(res.multiFaceLandmarks) &&
+                                     res.multiFaceLandmarks.length > 0;
                     setFaceDetected(detected);
                     setLandmarks(detected ? res.multiFaceLandmarks[0] : null);
                 });
 
                 await faceMesh.initialize();
+                if (cancelled) return;
+
                 faceMeshRef.current = faceMesh;
-                if (!cancelled) setReady(true);
+                setReady(true);
+                setModelLoading(false);
             } catch (e) {
-                if (!cancelled) setError('Failed to load MediaPipe FaceMesh: ' + e.message);
+                if (cancelled) return;
+                if (attempt < 3) {
+                    // Retry up to 2 more times (CDN can be flaky)
+                    setTimeout(() => load(attempt + 1), 2000);
+                } else {
+                    setModelLoading(false);
+                    setError('Failed to load MediaPipe FaceMesh: ' + e.message);
+                }
             }
         }
-        
+
         load();
-        
+
         return () => { cancelled = true; };
     }, []);
 
     /* ── Start tracking loop ───────────────────────────────────── */
     const startTracking = useCallback(() => {
         const video = videoRef?.current;
-        if (!video || !faceMeshRef.current || !window.Camera) return;
-        const cam = new window.Camera(video, {
-            onFrame: async () => {
-                if (faceMeshRef.current) {
-                    await faceMeshRef.current.send({ image: video });
+        if (!video || !faceMeshRef.current) return;
+
+        if (frameRef.current) return; // loop already running
+
+        async function detectFrame() {
+            if (!faceMeshRef.current) return;
+            const v = videoRef?.current;
+            if (!v) return;
+
+            // readyState >= 2 → HAVE_CURRENT_DATA: at least one frame decoded
+            // Also guard against zero-dimension frames
+            if (v.readyState >= 2 && v.videoWidth > 0 && !v.paused && !v.ended) {
+                try {
+                    await faceMeshRef.current.send({ image: v });
+                } catch (_) {
+                    // Silently ignore per-frame errors
                 }
-            },
-            width: 640,
-            height: 480,
-        });
-        cameraRef.current = cam;
-        cam.start();
+            }
+            frameRef.current = requestAnimationFrame(detectFrame);
+        }
+        frameRef.current = requestAnimationFrame(detectFrame);
     }, [videoRef]);
 
     /* ── Manual single-frame send (when managing own video) ────── */
@@ -124,5 +149,12 @@ export default function useFaceMesh(videoRef) {
 
     useEffect(() => () => stopTracking(), [stopTracking]);
 
-    return { ready, error, results, faceDetected, landmarks, headPose: { pitch: 0, yaw: 0, roll: 0 }, gazeVector: { x: 0, y: 0 }, isLoaded: ready, startTracking, stopTracking, sendFrame };
+    return {
+        ready, modelLoading, error,
+        results, faceDetected, landmarks,
+        headPose: { pitch: 0, yaw: 0, roll: 0 },
+        gazeVector: { x: 0, y: 0 },
+        isLoaded: ready,
+        startTracking, stopTracking, sendFrame,
+    };
 }

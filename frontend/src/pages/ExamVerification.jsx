@@ -26,7 +26,7 @@ import FaceVerification from '../components/FaceVerification';
 import LivenessDetector from '../components/LivenessDetector';
 import {
     CreditCard, Camera, Eye, ScanLine,
-    CheckCircle, ArrowRight, RefreshCw,
+    CheckCircle, XCircle, ArrowRight, RefreshCw,
     AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 
@@ -121,67 +121,76 @@ function StepEnvironment({ onPass, sessionId }) {
     const [done,      setDone]      = useState(false);
     const [error,     setError]     = useState(null);
 
-    // Track which UI checks look "complete" for visual feedback
-    const [results,   setResults]   = useState({});
+    // Per-check results: null = not checked, true = passed, false = failed
+    const [results, setResults] = useState({
+        lighting:   null,
+        alone:      null,
+        noDevices:  null,
+        background: null,
+    });
+
+    const ENV_ITEMS = [
+        { id: 'lighting',   label: 'Adequate lighting',          emoji: '💡', failHint: 'Improve lighting — turn on a lamp or face a window.' },
+        { id: 'alone',      label: 'Only you in frame',          emoji: '🚫', failHint: 'Make sure no other people are visible in the camera.' },
+        { id: 'noDevices',  label: 'No unauthorized devices',    emoji: '📵', failHint: 'Remove phones, laptops or other devices from view.' },
+        { id: 'background', label: 'No other persons in bg',     emoji: '🖼️', failHint: 'Make sure your background is clear.' },
+    ];
 
     useEffect(() => {
         let stream;
         navigator.mediaDevices
-            .getUserMedia({ video: true, audio: false })
-            .then(s => { stream = s; if (videoRef.current) videoRef.current.srcObject = s; setCamReady(true); })
+            .getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false })
+            .then(s => { stream = s; if (videoRef.current) videoRef.current.srcObject = s; })
             .catch(() => {});
         return () => stream?.getTracks().forEach(t => t.stop());
     }, []);
 
-    const scan = () => {
+    const scan = async () => {
+        if (!videoRef.current) return;
         setScanning(true);
         setError(null);
+        setResults({ lighting: null, alone: null, noDevices: null, background: null });
 
-        // Pre-fill visual checkmarks over time to look nice
-        ENV_ITEMS.forEach((item, i) => {
-            setTimeout(() => {
-                setResults(r => ({ ...r, [item.id]: 'passed' }));
-            }, 600 * (i + 1));
-        });
+        // Allow camera a moment to stabilise
+        await new Promise(r => setTimeout(r, 1500));
 
-        // 1. Give the camera a few seconds to stabilise
-        setTimeout(async () => {
-            const v = videoRef.current;
-            if (!v) { setScanning(false); return; }
+        // Capture frame
+        const v = videoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width  = v.videoWidth  || 640;
+        canvas.height = v.videoHeight || 480;
+        canvas.getContext('2d').drawImage(v, 0, 0);
+        const frameBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-            // 2. Capture frame
-            const canvas = document.createElement('canvas');
-            canvas.width = v.videoWidth;
-            canvas.height = v.videoHeight;
-            canvas.getContext('2d').drawImage(v, 0, 0);
-            const frameB64 = canvas.toDataURL('image/jpeg', 0.85);
+        try {
+            const { data } = await api.post('/verification/environment', {
+                sessionId,
+                frameBase64,
+            });
 
-            // 3. Send to verification backend
-            try {
-                // Environment check auto verification
-                const { data } = await api.post('/verification/environment', {
-                    sessionId,
-                    checks: {
-                        microphone: true,
-                        fullscreen: true,
-                        alone: true
-                    }
-                });
+            // Update each check result individually
+            const c = data.checks || {};
+            setResults({
+                lighting:   c.lighting   ?? true,
+                alone:      c.alone      ?? true,
+                noDevices:  c.noDevices  ?? true,
+                background: c.background ?? true,
+            });
 
-                if (data.passed) {
-                    setScanning(false);
-                    setDone(true);
-                } else {
-                    setScanning(false);
-                    setResults({}); // reset visual checks
-                    setError('Prohibited item detected or check failed. Please clear your environment and try again.');
-                }
-            } catch {
-                setScanning(false);
-                setResults({});
-                setError('Failed to scan environment. Please try again.');
+            if (data.passed) {
+                setDone(true);
+            } else {
+                const failed = Object.entries(c)
+                    .filter(([, v]) => !v)
+                    .map(([k]) => ENV_ITEMS.find(i => i.id === k)?.failHint)
+                    .filter(Boolean);
+                setError(failed.join(' | ') || 'Environment check failed. Adjust your setup and retry.');
             }
-        }, 2500); // 2.5s delay before sending frame
+        } catch (e) {
+            setError(e.response?.data?.message || 'Scan failed — please check your connection and retry.');
+        } finally {
+            setScanning(false);
+        }
     };
 
     return (
@@ -194,15 +203,19 @@ function StepEnvironment({ onPass, sessionId }) {
                         </div>
                         <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1E293B' }}>Environment Scan</h2>
                     </div>
-                    <p style={{ margin: 0, color: '#64748B', fontSize: '0.82rem' }}>Confirm your surroundings meet the exam requirements.</p>
+                    <p style={{ margin: 0, color: '#64748B', fontSize: '0.82rem' }}>
+                        AWS Rekognition will analyse your webcam frame for lighting, devices, and presence.
+                    </p>
                 </div>
                 <Pill status={done ? 'passed' : scanning ? 'checking' : 'idle'} />
             </div>
 
             <div style={{ display: 'flex', gap: '1.5rem' }}>
-                {/* Live webcam with scan animation */}
+                {/* Live webcam */}
                 <div style={{ width: 220, flexShrink: 0, borderRadius: 10, overflow: 'hidden', background: '#1E293B', aspectRatio: '4/3', position: 'relative' }}>
-                    <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <video ref={videoRef} autoPlay muted playsInline
+                        onLoadedData={() => setCamReady(true)}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     {scanning && (
                         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                             <div style={{ position: 'absolute', inset: 0, background: 'rgba(245,158,11,0.1)' }} />
@@ -224,19 +237,24 @@ function StepEnvironment({ onPass, sessionId }) {
                 {/* Checks list */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                     {ENV_ITEMS.map(item => {
-                        const r = results[item.id];
+                        const r = results[item.id]; // null | true | false
+                        const isChecking = scanning && r === null;
+                        const bg     = r === true ? '#F0FDF4' : r === false ? '#FEF2F2' : '#F8FAFC';
+                        const border = r === true ? '#BBF7D0' : r === false ? '#FECACA' : '#E2E8F0';
                         return (
                             <div key={item.id} style={{
                                 display: 'flex', alignItems: 'center', gap: '0.75rem',
                                 padding: '0.75rem 1rem', borderRadius: 10,
-                                background: r ? '#F0FDF4' : '#F8FAFC',
-                                border: `1.5px solid ${r ? '#BBF7D0' : '#E2E8F0'}`,
+                                background: bg, border: `1.5px solid ${border}`,
                                 transition: 'all 0.3s',
                             }}>
                                 <span style={{ fontSize: '1.2rem' }}>{item.emoji}</span>
-                                <span style={{ fontSize: '0.875rem', color: r ? '#15803D' : '#64748B', fontWeight: r ? 600 : 400 }}>{item.label}</span>
-                                {r && <CheckCircle size={15} color="#16A34A" style={{ marginLeft: 'auto', flexShrink: 0 }} />}
-                                {!r && scanning && <RefreshCw size={13} color="#F59E0B" style={{ marginLeft: 'auto', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+                                <span style={{ fontSize: '0.875rem', color: r === true ? '#15803D' : r === false ? '#DC2626' : '#64748B', fontWeight: r !== null ? 600 : 400, flex: 1 }}>
+                                    {item.label}
+                                </span>
+                                {r === true  && <CheckCircle size={15} color="#16A34A" style={{ flexShrink: 0 }} />}
+                                {r === false && <XCircle     size={15} color="#DC2626" style={{ flexShrink: 0 }} />}
+                                {isChecking  && <RefreshCw   size={13} color="#F59E0B" style={{ flexShrink: 0, animation: 'spin 1s linear infinite' }} />}
                             </div>
                         );
                     })}
@@ -244,9 +262,9 @@ function StepEnvironment({ onPass, sessionId }) {
             </div>
 
             {error && (
-                <div style={{ marginTop: '1rem', padding: '0.8rem 1rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, fontSize: '0.85rem', color: '#DC2626', display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-                    <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                    {error}
+                <div style={{ marginTop: '1rem', padding: '0.8rem 1rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, fontSize: '0.85rem', color: '#DC2626', display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                    <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>{error}</span>
                 </div>
             )}
 
@@ -259,7 +277,7 @@ function StepEnvironment({ onPass, sessionId }) {
                     <button style={mkBtn(camReady ? '#F59E0B' : '#CBD5E1', true)} onClick={scan} disabled={!camReady || scanning}>
                         {scanning
                             ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing with Rekognition…</>
-                            : <><ScanLine size={15} /> Start Environment Scan</>
+                            : <><ScanLine size={15} /> {error ? 'Retry Scan' : 'Start Environment Scan'}</>
                         }
                     </button>
                 )}
@@ -267,6 +285,7 @@ function StepEnvironment({ onPass, sessionId }) {
         </div>
     );
 }
+
 
 /* ────────────────────────────────────────────────────────────────
    Main Page

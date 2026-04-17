@@ -78,15 +78,18 @@ export default function FaceVerification({ sessionId, onVerified, onError }) {
     const [result,    setResult]    = useState(null);
 
     /* MediaPipe real-time face detection */
-    const { ready: meshReady, faceDetected, startTracking, stopTracking } = useFaceMesh(videoRef);
+    const { ready: meshReady, modelLoading, faceDetected, startTracking, stopTracking } = useFaceMesh(videoRef);
 
     const startCamera = useCallback(() => {
         navigator.mediaDevices
             .getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false })
             .then(stream => {
                 streamRef.current = stream;
-                if (videoRef.current) videoRef.current.srcObject = stream;
-                setCamReady(true);
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    // camReady is set via onLoadedData on the <video> element
+                    // so we only flip it once the video is truly playing frames
+                }
             })
             .catch(() => setCamReady(false));
     }, []);
@@ -166,15 +169,35 @@ export default function FaceVerification({ sessionId, onVerified, onError }) {
                     <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#0F172A', aspectRatio: '4/3' }}>
                         {!preview ? (
                             <>
-                                <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    muted
+                                    playsInline
+                                    onLoadedData={() => setCamReady(true)}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                />
                                 {/* Oval face guide */}
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                                     <div style={{ width: '55%', height: '80%', border: `2.5px solid ${faceDetected ? 'rgba(34,197,94,0.85)' : 'rgba(139,92,246,0.75)'}`, borderRadius: '50%', boxShadow: `0 0 0 9999px rgba(0,0,0,0.38)`, transition: 'border-color 0.2s' }} />
                                 </div>
                                 {/* Real-time face status pill */}
                                 <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-                                    <span style={{ background: faceDetected ? 'rgba(22,163,74,0.9)' : 'rgba(100,116,139,0.85)', color: '#fff', padding: '3px 10px', borderRadius: 99, fontSize: '0.68rem', fontWeight: 700, backdropFilter: 'blur(4px)', transition: 'background 0.25s' }}>
-                                        {faceDetected ? '✓ Face Detected' : 'No face in frame'}
+                                    <span style={{
+                                        background: modelLoading
+                                            ? 'rgba(100,116,139,0.85)'
+                                            : faceDetected
+                                                ? 'rgba(22,163,74,0.9)'
+                                                : 'rgba(220,38,38,0.85)',
+                                        color: '#fff',
+                                        padding: '3px 10px', borderRadius: 99, fontSize: '0.68rem',
+                                        fontWeight: 700, backdropFilter: 'blur(4px)', transition: 'background 0.25s',
+                                    }}>
+                                        {modelLoading
+                                            ? '⏳ Loading model…'
+                                            : faceDetected
+                                                ? '✓ Face Detected'
+                                                : '✗ No face in frame'}
                                     </span>
                                 </div>
                                 {!camReady && (

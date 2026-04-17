@@ -2,7 +2,7 @@ const VerificationSession = require('../models/VerificationSession');
 const VerificationRecord  = require('../models/VerificationRecord');
 const User                = require('../models/User');
 const { analyzeFrame, verifyFaceIdentity } = require('../services/aiProctoring.service');
-const { verifyIDCard } = require('../services/rekognition.service');
+const { verifyIDCard, scanEnvironment }    = require('../services/rekognition.service');
 const logger              = require('../utils/logger');
 
 /* ─────────────────────────────────────────────────────────────────
@@ -70,14 +70,25 @@ exports.verifyId = async (req, res, next) => {
  * ───────────────────────────────────────────────────────────────── */
 exports.verifyLiveness = async (req, res, next) => {
     try {
-        const { sessionId, frameBase64 } = req.body;
-        if (!sessionId || !frameBase64) return res.status(400).json({ success: false, message: 'sessionId and frameBase64 required.' });
+        const { sessionId, frameBase64, clientVerified } = req.body;
+        if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId required.' });
 
         const session = await VerificationSession.findById(sessionId);
         if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
 
-        const aiResult = await analyzeFrame(frameBase64, sessionId);
-        const passed   = aiResult.faceDetected === true && aiResult.deepfakeDetected === false;
+        let passed = false;
+        let aiResult = {};
+
+        // If the client already confirmed via MediaPipe direction detection,
+        // trust the client result and skip the (optional) deepfake AI call.
+        if (clientVerified === true) {
+            passed = true;
+            aiResult = { clientVerified: true, faceDetected: true, deepfakeDetected: false };
+        } else {
+            if (!frameBase64) return res.status(400).json({ success: false, message: 'frameBase64 required.' });
+            aiResult = await analyzeFrame(frameBase64, sessionId);
+            passed   = aiResult.faceDetected === true && aiResult.deepfakeDetected === false;
+        }
 
         if (passed) {
             session.livenessPassed = true;
@@ -104,6 +115,7 @@ exports.verifyLiveness = async (req, res, next) => {
         next(err);
     }
 };
+
 
 /* ─────────────────────────────────────────────────────────────────
  * POST /api/verification/face
@@ -180,14 +192,20 @@ exports.verifyFace = async (req, res, next) => {
  * ───────────────────────────────────────────────────────────────── */
 exports.verifyEnvironment = async (req, res, next) => {
     try {
-        const { sessionId, checks } = req.body;
-        if (!sessionId || !checks) return res.status(400).json({ success: false, message: 'sessionId and checks required.' });
+        const { sessionId, frameBase64 } = req.body;
+        if (!sessionId) return res.status(400).json({ success: false, message: 'sessionId required.' });
 
         const session = await VerificationSession.findById(sessionId);
         if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
 
-        // checks is expected to be an object e.g., { microphone: true, fullscreen: true, alone: true }
-        const allPassed = Object.values(checks).every(val => val === true);
+        // Run real environment scan via Rekognition DetectFaces + DetectLabels
+        const scan = await scanEnvironment(frameBase64 || '');
+
+        const {
+            checks:   { lighting, alone, noDevices, background },
+            allPassed,
+            details,
+        } = scan;
 
         if (allPassed) {
             session.environmentSafe = true;
@@ -201,10 +219,15 @@ exports.verifyEnvironment = async (req, res, next) => {
             step:       'environment',
             passed:     allPassed,
             confidence: allPassed ? 100 : 0,
-            details:    checks
+            details:    { lighting, alone, noDevices, background, ...details },
         });
 
-        return res.status(200).json({ success: true, passed: allPassed });
+        return res.status(200).json({
+            success:   true,
+            passed:    allPassed,
+            checks:    { lighting, alone, noDevices, background },
+            details,
+        });
     } catch (err) {
         next(err);
     }

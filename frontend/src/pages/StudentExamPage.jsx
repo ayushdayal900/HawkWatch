@@ -1,22 +1,24 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { proctoringAPI } from '../services/api';
 import ProctoringOverlay from '../components/ProctoringOverlay';
-import { Clock, ChevronLeft, ChevronRight, Send, AlertTriangle } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, RefreshCw } from 'lucide-react';
 
 export default function StudentExamPage() {
     const { id } = useParams();
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    
-    const [exam, setExam] = useState(null);
-    const [examSession, setExamSession] = useState(null);
-    const [procSessionId, setProcSessionId] = useState(null);
-    
-    const [answers, setAnswers] = useState({});
-    const [currentQ, setCurrentQ] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
+    const verified = searchParams.get('verified') === '1';
+
+    const [exam,         setExam]         = useState(null);
+    const [examSession,  setExamSession]  = useState(null);
+    const [procSessionId,setProcSessionId]= useState(null);
+    const [answers,      setAnswers]      = useState({});
+    const [currentQ,     setCurrentQ]     = useState(0);
+    const [timeLeft,     setTimeLeft]     = useState(0);
+    const [loading,      setLoading]      = useState(true);
+    const [pageError,    setPageError]    = useState(null);
+    const [submitting,   setSubmitting]   = useState(false);
 
     // Initial session hook
     useEffect(() => {
@@ -25,43 +27,72 @@ export default function StudentExamPage() {
             try {
                 // 1. Fetch exam configuration
                 const { data: examData } = await api.get(`/exams/${id}`);
-                setExam(examData.data);
-                
-                // 2. Start or Recover Session
+                if (!mounted) return;
+                const examObj = examData.data || examData;
+                setExam(examObj);
+
+                // 2. Recover (or start) session.
+                //    Verification page already called POST /exams/start.
+                //    We try to GET the active session first to avoid a
+                //    double-start 403; fall back to POST only if needed.
                 let sessionDetails;
                 try {
-                    const { data } = await api.post('/exams/start', { examId: id });
-                    sessionDetails = data.data;
-                } catch (e) {
-                    if (e.response?.status === 403) {
-                        return navigate(`/student-exam/${id}/verify`);
+                    // Route: GET /api/exams/session/:examId
+                    const { data: sessData } = await api.get(`/exams/session/${id}`);
+                    sessionDetails = sessData.data || sessData;
+                } catch (getErr) {
+                    // No active session found — try starting fresh
+                    if (getErr.response?.status === 404 || getErr.response?.status === 400) {
+                        const { data: startData } = await api.post('/exams/start', { examId: id });
+                        sessionDetails = startData.data || startData;
+                    } else if (getErr.response?.status === 403) {
+                        // Not verified — send back to verification
+                        navigate(`/exam-verification/${id}`);
+                        return;
+                    } else {
+                        throw getErr;
                     }
-                    throw e;
                 }
-                
+
+                if (!mounted) return;
                 setExamSession(sessionDetails);
 
                 // Recover prior answers
-                if (sessionDetails.answers && sessionDetails.answers.length > 0) {
+                if (sessionDetails?.answers?.length > 0) {
                     const recovered = {};
                     sessionDetails.answers.forEach(a => recovered[a.questionId] = a.answer);
                     setAnswers(recovered);
                 }
 
                 // Timer sync
-                const passedTime = Math.floor((Date.now() - new Date(sessionDetails.startTimestamp).getTime()) / 1000);
-                const remaining = (examData.data.duration * 60) - passedTime;
+                const passedTime = Math.floor(
+                    (Date.now() - new Date(sessionDetails.startTimestamp).getTime()) / 1000
+                );
+                const remaining = (examObj.duration * 60) - passedTime;
                 setTimeLeft(remaining > 0 ? remaining : 0);
 
-                // 3. Start Proctoring 
-                const { data: procData } = await proctoringAPI.startSession({ examId: id });
-                if (mounted) setProcSessionId(procData.data._id);
-                
+                // 3. Start Proctoring (non-fatal — exam still works if this fails)
+                try {
+                    const { data: procData } = await proctoringAPI.startSession({ examId: id });
+                    if (mounted) setProcSessionId(procData?.data?._id || procData?._id || null);
+                } catch (procErr) {
+                    if (procErr.response?.status === 409) {
+                        // Session already active — extract existing ID if returned
+                        const sid = procErr.response?.data?.sessionId;
+                        if (sid && mounted) setProcSessionId(sid);
+                    }
+                    // Other proctoring errors are non-fatal
+                    console.warn('Proctoring start issue (non-fatal):', procErr.message);
+                }
+
             } catch (err) {
-                console.error(err);
-                if (err.response?.status === 409) {
-                    // Proctoring session might already be active.
-                    setProcSessionId(err.response.data.sessionId); 
+                console.error('Exam init error:', err);
+                if (mounted) {
+                    setPageError(
+                        err.response?.data?.message ||
+                        err.message ||
+                        'Could not load exam. Please check your connection and try again.'
+                    );
                 }
             } finally {
                 if (mounted) setLoading(false);
@@ -126,8 +157,35 @@ export default function StudentExamPage() {
         }
     };
 
-    if (loading) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading Secure Exam Container...</div>;
-    if (!exam) return <div>Exam not available.</div>;
+    if (loading) return (
+        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, fontFamily: 'Inter, sans-serif' }}>
+            <div style={{ width: 36, height: 36, border: '3px solid #3B82F6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <span style={{ color: '#64748B', fontWeight: 600 }}>Loading Secure Exam Container…</span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+    );
+
+    if (pageError) return (
+        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, fontFamily: 'Inter, sans-serif', padding: '2rem', textAlign: 'center' }}>
+            <AlertTriangle size={48} color="#EF4444" />
+            <h2 style={{ margin: 0, color: '#1E293B' }}>Could Not Load Exam</h2>
+            <p style={{ margin: 0, color: '#64748B', maxWidth: 400 }}>{pageError}</p>
+            <button onClick={() => window.location.reload()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0.7rem 1.5rem', borderRadius: 8, border: 'none', background: '#3B82F6', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                <RefreshCw size={15} /> Retry
+            </button>
+            <button onClick={() => navigate('/my-exams')}
+                style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline' }}>
+                Back to My Exams
+            </button>
+        </div>
+    );
+
+    if (!exam) return (
+        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontFamily: 'Inter, sans-serif' }}>
+            Exam data not available.
+        </div>
+    );
 
     const questions = exam.questions || [];
     const activeQ = questions[currentQ];
