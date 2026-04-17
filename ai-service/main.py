@@ -1,216 +1,242 @@
-"""
-HawkWatch — AI Proctoring Microservice
-=======================================
-Stack: Python 3.11, FastAPI, MediaPipe, OpenCV, PyTorch
-
-Endpoints
----------
-POST /analyze-frame      — Face detection, head pose, gaze, deepfake
-POST /verify-face        — Identity verification (ArcFace embedding)
-POST /detect-deepfake    — Deepfake classification (EfficientNet)
-POST /analyze-behavior   — Behavioral biometrics anomaly detection
-
-Run:
-    pip install -r requirements.txt
-    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-"""
-
+import os
 import base64
 import io
-import os
-
-import cv2
-import mediapipe as mp
+import math
 import numpy as np
-from fastapi import FastAPI, HTTPException, Header
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from PIL import Image
 
-# ─── App Setup ───────────────────────────────────────────────
-app = FastAPI(title="HawkWatch AI Service", version="1.0.0")
+try:
+    import torch
+    import torchvision.transforms as transforms
+except ImportError:
+    torch = None
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+try:
+    from insightface.app import FaceAnalysis
+except ImportError:
+    FaceAnalysis = None
 
-API_KEY = os.getenv("AI_SERVICE_API_KEY", "")
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
 
-# ─── MediaPipe Setup ──────────────────────────────────────────
-mp_face_detection = mp.solutions.face_detection
-mp_face_mesh      = mp.solutions.face_mesh
+app = FastAPI(title="HawkWatch AI Microservice")
 
-face_detector  = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
-face_mesh      = mp_face_mesh.FaceMesh(
-    static_image_mode=False, max_num_faces=2,
-    refine_landmarks=True, min_detection_confidence=0.5
-)
+# ---------- Globals & Models ----------
+DEEPFAKE_MODEL_PATH = os.environ.get("DEEPFAKE_MODEL_PATH", "efficientnet_b4.pt")
+deepfake_model = None
+device = torch.device('cuda' if torch and torch.cuda.is_alive() else 'cpu') if torch else 'cpu'
 
-# ─── Models ──────────────────────────────────────────────────
-class FrameRequest(BaseModel):
+insight_app = None
+yolo_model = None
+behavior_baselines = {}
+
+def load_models():
+    global deepfake_model, insight_app, yolo_model
+    # 1. Deepfake Model
+    if torch:
+        try:
+            if os.path.exists(DEEPFAKE_MODEL_PATH):
+                deepfake_model = torch.load(DEEPFAKE_MODEL_PATH, map_location=device)
+                deepfake_model.eval()
+                print(f"Loaded deepfake model from {DEEPFAKE_MODEL_PATH}")
+            else:
+                print(f"Warning: Deepfake model not found at {DEEPFAKE_MODEL_PATH}. Using stub.")
+        except Exception as e:
+            print(f"Warning: Failed to load deepfake model: {e}")
+    
+    # 2. InsightFace
+    if FaceAnalysis:
+        try:
+            insight_app = FaceAnalysis(name='buffalo_l', root='~/.insightface')
+            insight_app.prepare(ctx_id=0, det_size=(640, 640))
+            print("Loaded InsightFace Buffalo_L.")
+        except Exception as e:
+            print(f"Warning: Failed to load InsightFace: {e}")
+            
+    # 3. YOLOv8
+    if YOLO:
+        try:
+            yolo_model = YOLO('yolov8n.pt')
+            print("Loaded YOLOv8n object detection.")
+        except Exception as e:
+            print(f"Warning: Failed to load YOLOv8: {e}")
+
+load_models()
+
+# ---------- Helpers ----------
+def decode_image(b64_str: str) -> np.ndarray:
+    try:
+        img_data = base64.b64decode(b64_str)
+        image = Image.open(io.BytesIO(img_data)).convert('RGB')
+        return np.array(image)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid image base64")
+
+def preprocess_deepfake(img_np: np.ndarray):
+    img = Image.fromarray(img_np)
+    preprocess = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    return preprocess(img).unsqueeze(0).to(device)
+
+def get_deepfake_score(img_np: np.ndarray) -> float:
+    if not deepfake_model:
+        return 0.05 # stubs
+    try:
+        tensor = preprocess_deepfake(img_np)
+        with torch.no_grad():
+            output = deepfake_model(tensor)
+            score = torch.sigmoid(output).item()
+        return score
+    except Exception as e:
+        print(f"Deepfake error: {e}")
+        return 0.1
+
+def extract_embedding(img_np: np.ndarray) -> List[float]:
+    if not insight_app:
+        return [0.0] * 512 # stubs
+    faces = insight_app.get(img_np)
+    if len(faces) == 0:
+        return []
+    # return largest face
+    faces = sorted(faces, key=lambda x: (x.bbox[2]-x.bbox[0])*(x.bbox[3]-x.bbox[1]), reverse=True)
+    return faces[0].embedding.tolist()
+
+# ---------- Routes ----------
+
+class EnrollRequest(BaseModel):
+    frame_b64: str
+
+@app.post("/enroll-face")
+async def enroll_face(req: EnrollRequest):
+    img = decode_image(req.frame_b64)
+    emb = extract_embedding(img)
+    if len(emb) == 0:
+        raise HTTPException(status_code=400, detail="No face detected for enrollment")
+    return {"embedding": emb}
+
+class VerifyRequest(BaseModel):
+    frame_b64: str
+    embedding: List[float]
+
+@app.post("/verify-face")
+async def verify_face(req: VerifyRequest):
+    img = decode_image(req.frame_b64)
+    emb = extract_embedding(img)
+    if len(emb) == 0:
+        return {"match": False, "similarity": 0.0, "confidence": 0.0}
+    
+    # Cosine similarity
+    A = np.array(emb)
+    B = np.array(req.embedding)
+    if np.linalg.norm(A)==0 or np.linalg.norm(B)==0:
+         sim = 0.0
+    else:
+         sim = float(np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B)))
+    match = sim > 0.5
+    return {"match": match, "similarity": sim, "confidence": 0.9}
+
+class AnalyzeFrameRequest(BaseModel):
     frame_b64: str
     session_id: str
 
-class BehaviorRequest(BaseModel):
-    typing: dict
-    mouse: dict
-    baseline: dict | None = None
-
-class FaceVerifyRequest(BaseModel):
-    frame_b64: str
-    embedding: list[float]
-
-# ─── Helpers ─────────────────────────────────────────────────
-def decode_frame(b64: str) -> np.ndarray:
-    """Decode base64 JPEG/PNG to OpenCV BGR array."""
-    data = base64.b64decode(b64)
-    img  = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image data")
-    return img
-
-def estimate_head_pose(landmarks, img_shape):
-    """
-    Estimate Euler angles (pitch, yaw, roll) using OpenCV solvePnP
-    with a simplified 3D face model.
-    """
-    h, w = img_shape[:2]
-    # 6-point 3D reference model (nose, chin, L/R eye corners, L/R mouth corners)
-    model_pts = np.array([
-        (0.0, 0.0, 0.0),        # Nose tip
-        (0.0, -330.0, -65.0),   # Chin
-        (-225.0, 170.0, -135.0),# Left eye corner
-        (225.0, 170.0, -135.0), # Right eye corner
-        (-150.0, -150.0, -125.0),# Left mouth corner
-        (150.0, -150.0, -125.0), # Right mouth corner
-    ], dtype=np.float64)
-
-    # Corresponding MediaPipe landmark indices
-    idx = [1, 152, 33, 263, 61, 291]
-    pts = []
-    for i in idx:
-        lm = landmarks.landmark[i]
-        pts.append((lm.x * w, lm.y * h))
-    img_pts = np.array(pts, dtype=np.float64)
-
-    focal   = w
-    cam_mtx = np.array([[focal, 0, w/2], [0, focal, h/2], [0, 0, 1]], dtype=np.float64)
-    _, rvec, tvec = cv2.solvePnP(model_pts, img_pts, cam_mtx, np.zeros((4,1)),
-                                  flags=cv2.SOLVEPNP_ITERATIVE)
-    rot_mat, _ = cv2.Rodrigues(rvec)
-    euler = cv2.RQDecomp3x3(rot_mat)[0]
-    return {"pitch": round(euler[0], 2), "yaw": round(euler[1], 2), "roll": round(euler[2], 2)}
-
-
-def deepfake_score_stub(img: np.ndarray) -> float:
-    """
-    Placeholder for EfficientNet deepfake classifier.
-    Replace with: model.predict(preprocess(img)) after loading weights.
-    """
-    # TODO: load model once at startup
-    # model = torch.load("weights/deepfake_effnet.pth")
-    return 0.04  # stub: real face
-
-
-def check_gaze_deviation(landmarks, threshold=0.35) -> bool:
-    """
-    Rough gaze check: compare horizontal iris position relative to eye corners.
-    """
-    try:
-        l_iris  = landmarks.landmark[468]   # left iris center
-        l_inner = landmarks.landmark[133]   # left eye inner corner
-        l_outer = landmarks.landmark[33]    # left eye outer corner
-        eye_w   = abs(l_inner.x - l_outer.x)
-        if eye_w == 0:
-            return False
-        rel_pos = (l_iris.x - l_outer.x) / eye_w
-        return rel_pos < threshold or rel_pos > (1 - threshold)
-    except Exception:
-        return False
-
-# ─── Routes ──────────────────────────────────────────────────
-@app.get("/health")
-def health():
-    return {"status": "ok", "service": "HawkWatch AI Service"}
-
-
 @app.post("/analyze-frame")
-async def analyze_frame(req: FrameRequest, x_api_key: str = Header(default="")):
-    img     = decode_frame(req.frame_b64)
-    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    # Face detection
-    det_result = face_detector.process(rgb_img)
-    face_count = len(det_result.detections) if det_result.detections else 0
-    face_detected  = face_count > 0
-    multiple_faces = face_count > 1
-    face_conf      = float(det_result.detections[0].score[0]) if face_detected else 0.0
-
-    # Face mesh + head pose + gaze
-    head_pose       = {"pitch": 0.0, "yaw": 0.0, "roll": 0.0}
-    gaze_deviation  = False
-    gaze_vector     = {"x": 0.0, "y": 0.0}
-
-    if face_detected:
-        mesh_result = face_mesh.process(rgb_img)
-        if mesh_result.multi_face_landmarks:
-            lms          = mesh_result.multi_face_landmarks[0]
-            head_pose    = estimate_head_pose(lms, img.shape)
-            gaze_deviation = check_gaze_deviation(lms)
-
-    # Deepfake detection
-    df_score = deepfake_score_stub(img)
+async def analyze_frame(req: AnalyzeFrameRequest):
+    img = decode_image(req.frame_b64)
+    
+    # 1. InsightFace: detect face, landmarks, head pose
+    face_detected = False
+    multi_faces = False
+    gaze_dev = False
+    pitch = yaw = roll = 0.0
+    conf = 0.0
+    
+    if insight_app:
+        faces = insight_app.get(img)
+        if len(faces) > 0:
+            face_detected = True
+            conf = float(faces[0].det_score)
+            pitch, yaw, roll = faces[0].pose.tolist() # pitch, yaw, roll approximate
+            if len(faces) > 1:
+                multi_faces = True
+    else:
+        # stubs
+        face_detected = True
+        conf = 0.95
+        
+    df_score = get_deepfake_score(img)
+    
+    # 2. YOLO object detection for phone
+    phone_detected = False
+    if yolo_model:
+        results = yolo_model(img, verbose=False)
+        for r in results:
+            for c in r.boxes.cls:
+                if int(c) == 67: # cell phone
+                    phone_detected = True
+                    break
 
     return {
-        "faceDetected":   face_detected,
-        "faceCount":      face_count,
-        "multipleFaces":  multiple_faces,
-        "faceConfidence": round(face_conf, 4),
-        "headPose":       head_pose,
-        "gazeVector":     gaze_vector,
-        "gazeDeviation":  gaze_deviation,
-        "deepfakeScore":  round(df_score, 4),
+        "faceDetected": face_detected,
+        "multipleFaces": multi_faces,
+        "faceConfidence": conf,
+        "headPose": {"pitch": pitch, "yaw": yaw, "roll": roll},
+        "gazeDeviation": gaze_dev,
+        "deepfakeScore": df_score,
         "deepfakeDetected": df_score > 0.6,
-        "phoneDetected":  False,   # TODO: YOLO object detection
-        "personAbsent":   not face_detected,
-        "processingMs":   0,
+        "phoneDetected": phone_detected,
+        "personAbsent": conf < 0.3
     }
 
-
-@app.post("/verify-face")
-async def verify_face(req: FaceVerifyRequest):
-    """
-    ArcFace-based identity verification.
-    Compare live frame embedding with enrolled vector (cosine similarity).
-    """
-    # TODO: extract embedding from frame using InsightFace ArcFace
-    # live_embedding = arcface_model.get(decode_frame(req.frame_b64))
-    # sim = cosine_similarity(live_embedding, req.embedding)
-    sim = 0.93  # stub
-    return {"match": sim > 0.75, "similarity": sim, "confidence": sim}
-
+class DetectDeepfakeReq(BaseModel):
+    frame_b64: str
 
 @app.post("/detect-deepfake")
-async def detect_deepfake(req: FrameRequest):
-    img   = decode_frame(req.frame_b64)
-    score = deepfake_score_stub(img)
+async def detect_deepfake(req: DetectDeepfakeReq):
+    img = decode_image(req.frame_b64)
+    score = get_deepfake_score(img)
     return {"score": score, "isDeepfake": score > 0.6}
 
-
 @app.post("/analyze-behavior")
-async def analyze_behavior(req: BehaviorRequest):
-    """
-    Behavioral biometrics anomaly detection.
-    Production: compare typingRhythm / mouseDynamics against stored baseline
-    using a One-Class SVM or Autoencoder trained on enrollment data.
-    """
-    typing_score = 0.08   # stub — replace with model inference
-    mouse_score  = 0.11
-    overall      = (typing_score + mouse_score) / 2
+async def analyze_behavior(req: Dict[str, Any]):
+    # session_id tracking ideally injected, passing via body for now
+    session_id = req.get("session_id", "default_session")
+    typing = req.get("typing", {})
+    mouse = req.get("mouse", {})
+    
+    if session_id not in behavior_baselines:
+        # store baseline
+        behavior_baselines[session_id] = {
+            "dwell": typing.get("avgDwellTime", 0),
+            "flight": typing.get("avgFlightTime", 0),
+            "speed": mouse.get("avgSpeed", 0)
+        }
+        return {"typing": 0.0, "mouse": 0.0, "overall": 0.0}
+    
+    # Compare to baseline
+    base = behavior_baselines[session_id]
+    
+    # Z-score mock (we use standard deviation approximations)
+    b_dwell = base["dwell"] if base["dwell"] > 0 else 100
+    b_flight = base["flight"] if base["flight"] > 0 else 100
+    b_speed = base["speed"] if base["speed"] > 0 else 100
+    
+    z_dwell = abs(typing.get("avgDwellTime", 0) - b_dwell) / (b_dwell * 0.5)
+    z_flight = abs(typing.get("avgFlightTime", 0) - b_flight) / (b_flight * 0.5)
+    z_speed = abs(mouse.get("avgSpeed", 0) - b_speed) / (b_speed * 0.5)
+    
+    t_score = min((z_dwell + z_flight) / 2.0, 1.0)
+    m_score = min(z_speed, 1.0)
+    
     return {
-        "typing":  round(typing_score, 4),
-        "mouse":   round(mouse_score, 4),
-        "overall": round(overall, 4),
+        "typing": t_score,
+        "mouse": m_score,
+        "overall": (t_score + m_score) / 2.0
     }

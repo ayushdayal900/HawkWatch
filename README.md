@@ -1,4 +1,4 @@
-# HawkWatch 🦅
+![alt text](image.png)# HawkWatch 🦅
 
 > **AI-Powered Secure Online Examination Platform with Multimodal Proctoring**  
 > Computer Vision · Behavioral Biometrics · Deepfake Detection
