@@ -84,9 +84,9 @@ export default function LoginPage() {
     return (
         <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
 
-            {/* ── Left Panel: Brand Experience ───────────────────────── */}
-            <div style={{
-                width: '45%', flexShrink: 0,
+            {/* ── Left Panel: Brand Experience (Desktop Only) ───────────────────────── */}
+            <div className="hide-mobile" style={{
+                flex: 1,
                 background: 'linear-gradient(165deg, #020617 0%, #0f172a 50%, #1e1b4b 100%)',
                 display: 'flex', flexDirection: 'column',
                 padding: '4rem 3.5rem',
@@ -150,15 +150,7 @@ export default function LoginPage() {
                     </div>
 
                     {/* Footer */}
-                    <div style={{ paddingTop: '3rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', gap: 12 }}>
-                            <div className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', border: 'none' }}>
-                                <Zap size={10} style={{ marginRight: 4 }} /> v4.2 Stable
-                            </div>
-                            <div className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', border: 'none' }}>
-                                <Shield size={10} style={{ marginRight: 4 }} /> ISO 27001
-                            </div>
-                        </div>
+                    <div style={{ paddingTop: '3rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                         <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>
                             &copy; 2026 HawkWatch AI
                         </div>
@@ -169,7 +161,8 @@ export default function LoginPage() {
             {/* ── Right Panel: Login Form ───────────────────────────── */}
             <div style={{
                 flex: 1, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', padding: '2rem'
+                justifyContent: 'center', padding: '1.5rem',
+                minHeight: '100vh'
             }}>
                 <div style={{ width: '100%', maxWidth: 420 }}>
                     <div style={{ marginBottom: '2.5rem' }}>
@@ -249,12 +242,6 @@ export default function LoginPage() {
                                 Create an account
                             </Link>
                         </p>
-                    </div>
-
-                    <div style={{ marginTop: '4rem', display: 'flex', alignItems: 'center', gap: '1rem', opacity: 0.4 }}>
-                        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                        <ShieldCheck size={16} />
-                        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                     </div>
                 </div>
             </div>

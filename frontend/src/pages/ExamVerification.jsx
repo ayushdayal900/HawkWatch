@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Sidebar from '../components/Sidebar';
-import Navbar  from '../components/Navbar';
 import api     from '../services/api';
 import toast   from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
 import IDVerification   from '../components/IDVerification';
 import FaceVerification from '../components/FaceVerification';
 import LivenessDetector from '../components/LivenessDetector';
@@ -12,7 +12,7 @@ import StepEnvironment  from '../components/exam/StepEnvironment';
 import {
     CreditCard, Camera, Eye, ScanLine,
     CheckCircle, ShieldAlert, ChevronRight,
-    AlertCircle, ShieldCheck, 
+    AlertCircle, ShieldCheck, RefreshCw
 } from 'lucide-react';
 
 const STEPS = [
@@ -24,7 +24,7 @@ const STEPS = [
 
 function StepBar({ currentIdx, results }) {
     return (
-        <div className="card" style={{ display: 'flex', padding: '1.5rem', marginBottom: '2rem', gap: 0 }}>
+        <div className="card" style={{ display: 'flex', padding: '1.5rem', marginBottom: '2rem', gap: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {STEPS.map((s, i) => {
                 const done   = results[s.id] === 'passed';
                 const active = i === currentIdx;
@@ -78,6 +78,11 @@ export default function ExamVerification() {
     const [loading,    setLoading]    = useState(true);
 
     const next = useCallback(() => setStep(s => s + 1), []);
+    const { setPageTitle } = useUIStore();
+
+    useEffect(() => {
+        setPageTitle('Identity Verification');
+    }, [setPageTitle]);
 
     useEffect(() => {
         const initSession = async () => {
@@ -129,10 +134,8 @@ export default function ExamVerification() {
     };
 
     return (
-        <div style={{ display: 'flex' }}>
-            <Sidebar />
-            <main className="main-content">
-                <Navbar title="Identity Verification" />
+        <Layout>
+            <div className="animate-fade-in">
 
                 <div style={{ maxWidth: 840, margin: '0 auto' }}>
                     {/* Security Alert */}
@@ -162,7 +165,7 @@ export default function ExamVerification() {
                         </div>
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </Layout>
     );
 }

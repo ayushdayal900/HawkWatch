@@ -3,6 +3,7 @@ import { CameraOff, AlertTriangle, CheckCircle, Activity, ShieldCheck, Eye } fro
 import { proctoringAPI } from '../services/api';
 import useProctoringStore from '../store/proctoringStore';
 import useAuthStore from '../store/authStore';
+import useNotificationStore from '../store/notificationStore';
 
 const FRAME_INTERVAL_MS = 5000;
 const BEHAVIORAL_INTERVAL_MS = 60000;
@@ -45,7 +46,12 @@ export default function ProctoringOverlay({ sessionId, examId, onSessionTerminat
             if (res.data?.riskScore > 75) onSessionTerminated?.();
         }).catch(() => {});
         if (socket) socket.emit('proctor-event', { sessionId, eventType: flagPayload.type, data: flagPayload });
-        addFlag({ id: Date.now() + Math.random(), text: String(flagPayload.type).replace(/_/g, ' '), severity: flagPayload.severity });
+        const flagText = String(flagPayload.type).replace(/_/g, ' ');
+        addFlag({ id: Date.now() + Math.random(), text: flagText, severity: flagPayload.severity });
+
+        if (flagPayload.severity === 'high' || flagPayload.severity === 'critical') {
+            useNotificationStore.getState().addNotification(`Security Warning: ${flagText} detected during exam session.`);
+        }
     }, [sessionId, onSessionTerminated, socket, setRiskScore, addFlag]);
 
     // Camera
@@ -83,7 +89,12 @@ export default function ProctoringOverlay({ sessionId, examId, onSessionTerminat
             if (data.flagsGenerated > 0) {
                 const r = data.result;
                 const sev = (r?.deepfakeScore > 0.6) ? 'critical' : (r?.multipleFaces) ? 'high' : 'medium';
-                addFlag({ id: Date.now(), text: `${data.flagsGenerated} AI event(s) detected`, severity: sev });
+                const flagText = `${data.flagsGenerated} AI event(s) detected`;
+                addFlag({ id: Date.now(), text: flagText, severity: sev });
+                
+                if (sev === 'high' || sev === 'critical') {
+                    useNotificationStore.getState().addNotification(`Security Alert: AI detected suspicious activity: ${flagText}`);
+                }
             }
         } catch { /* non-fatal */ }
     }, [sessionId, onSessionTerminated, setRiskScore, addFlag]);

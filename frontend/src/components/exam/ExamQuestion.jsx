@@ -33,14 +33,16 @@ export default function ExamQuestion({ activeQ, answers, handleAnswer, questionI
             </div>
 
             {/* Stem */}
-            <div style={{
-                fontSize: '1.05rem', fontWeight: 500, color: '#1E293B',
-                lineHeight: 1.7, marginBottom: '1.75rem',
-            }}
-                dangerouslySetInnerHTML={stemText ? { __html: stemText } : undefined}
-            >
-                {!stemText && 'No question text provided.'}
-            </div>
+            {stemText ? (
+                <div 
+                    style={{ fontSize: '1.05rem', fontWeight: 500, color: '#1E293B', lineHeight: 1.7, marginBottom: '1.75rem' }}
+                    dangerouslySetInnerHTML={{ __html: stemText }}
+                />
+            ) : (
+                <div style={{ fontSize: '1.05rem', fontWeight: 500, color: '#94A3B8', lineHeight: 1.7, marginBottom: '1.75rem' }}>
+                    No question text provided.
+                </div>
+            )}
 
             {/* MCQ options */}
             {isMCQ && activeQ.options?.map((opt, i) => {

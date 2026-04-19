@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
-import api from '../services/api';
-import { ScanLine, CheckCircle, XCircle, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import api from '../../services/api';
+import { ScanLine, CheckCircle, XCircle, RefreshCw, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
 
 const ENV_ITEMS = [
     { id: 'lighting',   label: 'Adequate lighting',          emoji: '💡', failHint: 'Improve lighting — turn on a lamp or face a window.' },

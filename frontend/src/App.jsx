@@ -19,6 +19,7 @@ const ResultsPage          = lazy(() => import('./pages/ResultsPage'));
 const ExamVerification     = lazy(() => import('./pages/ExamVerification'));
 const AdminPage            = lazy(() => import('./pages/AdminPage'));
 const ProctoringReportPage = lazy(() => import('./pages/ProctoringReportPage'));
+const SettingsPage         = lazy(() => import('./pages/SettingsPage'));
 
 const Loader = () => (
     <div style={{
@@ -79,11 +80,13 @@ export default function App() {
                         {/* ── Protected — all authenticated roles ─────────── */}
                         <Route element={<ProtectedRoute />}>
                             <Route path="/dashboard"              element={<DashboardPage        />} />
+                            <Route path="/settings"               element={<SettingsPage         />} />
                             <Route path="/exams"                  element={<ExamListPage         />} />
                             <Route path="/create-exam"            element={<CreateExam           />} />
                             <Route path="/exams/:id"              element={<ExamRoomPage         />} />
                             <Route path="/student-exam/:id"       element={<StudentExamPage      />} />
                             <Route path="/results"                element={<ResultsPage          />} />
+                            <Route path="/results/:attemptId"     element={<ResultsPage          />} />
                             <Route path="/monitoring"             element={<MonitoringPage       />} />
                             <Route path="/proctoring"             element={<MonitoringPage       />} />
                             <Route path="/exam-verification/:id"  element={<ExamVerification     />} />

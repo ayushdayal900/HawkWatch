@@ -22,6 +22,7 @@ const {
     refreshToken,
     getMe,
     logout,
+    updateProfile,
 } = require('../controllers/auth.controller');
 
 const { protect } = require('../middleware/auth');
@@ -82,6 +83,7 @@ router.post('/refresh',  validateRefresh,  refreshToken);
 
 // Private
 router.get ('/me',     protect, getMe);
+router.patch('/me',    protect, updateProfile);
 router.post('/logout', protect, logout);
 
 module.exports = router;

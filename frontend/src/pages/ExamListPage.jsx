@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Sidebar   from '../components/Sidebar';
-import Navbar    from '../components/Navbar';
 import { examAPI } from '../services/api';
 import useAuthStore from '../store/authStore';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
 import toast       from 'react-hot-toast';
 import {
     Clock, BookOpen, Target, Search, Plus, Eye, Pencil,
@@ -141,7 +141,12 @@ export default function ExamListPage() {
             .finally(() => setLoading(false));
     }, []);
 
-    useEffect(() => { load(); }, [load]);
+    const { setPageTitle } = useUIStore();
+
+    useEffect(() => {
+        setPageTitle(isStudent ? 'Exam Library' : 'Exam Management');
+        load();
+    }, [load, isStudent, setPageTitle]);
 
     const filtered = exams.filter((e) => {
         const matchSearch = e.title.toLowerCase().includes(search.toLowerCase());
@@ -172,11 +177,8 @@ export default function ExamListPage() {
     };
 
     return (
-        <div style={{ display: 'flex' }}>
-            <Sidebar />
-            <main className="main-content">
-                <Navbar title={isStudent ? 'Exam Library' : 'Exam Management'} />
-
+        <Layout>
+            <div className="animate-fade-in">
                 {/* Toolbar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', gap: '1rem', flex: 1, maxWidth: 600 }}>
@@ -217,7 +219,7 @@ export default function ExamListPage() {
 
                 {/* Content */}
                 {loading ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: isStudent ? 'repeat(auto-fill, minmax(320px, 1fr))' : '1fr', gap: '1.5rem' }}>
+                    <div className={isStudent ? "responsive-grid" : ""}>
                         {[...Array(6)].map((_, i) => (
                             <div key={i} className="skeleton" style={{ height: isStudent ? 240 : 64, borderRadius: 'var(--r-lg)' }} />
                         ))}
@@ -238,7 +240,7 @@ export default function ExamListPage() {
                         )}
                     </div>
                 ) : isStudent ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+                    <div className="responsive-grid">
                         {filtered.map((exam) => (
                             <ExamCard key={exam._id} exam={exam} onTake={handleTake} />
                         ))}
@@ -254,7 +256,7 @@ export default function ExamListPage() {
                         />
                     </div>
                 )}
-            </main>
-        </div>
+            </div>
+        </Layout>
     );
 }

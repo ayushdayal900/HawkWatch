@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { organizationAPI } from '../services/api';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 import { Building2, Plus, Loader2 } from 'lucide-react';
 
@@ -9,9 +11,12 @@ export default function AdminPage() {
     const [form, setForm] = useState({ name: '', code: '' });
     const [submitting, setSubmitting] = useState(false);
 
+    const { setPageTitle } = useUIStore();
+
     useEffect(() => {
+        setPageTitle('System Administration');
         fetchOrgs();
-    }, []);
+    }, [setPageTitle]);
 
     const fetchOrgs = async () => {
         try {
@@ -43,18 +48,19 @@ export default function AdminPage() {
     };
 
     return (
-        <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-                <div style={{ background: '#EFF6FF', padding: '0.75rem', borderRadius: 12, color: '#3B82F6' }}>
-                    <Building2 size={28} />
+        <Layout>
+            <div className="animate-fade-in">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+                    <div style={{ background: '#EFF6FF', padding: '0.75rem', borderRadius: 12, color: '#3B82F6' }}>
+                        <Building2 size={28} />
+                    </div>
+                    <div>
+                        <h1 style={{ margin: 0, color: '#1E293B', fontSize: '1.5rem', fontWeight: 700 }}>Admin Settings</h1>
+                        <p style={{ margin: 0, color: '#64748B', fontSize: '0.85rem' }}>Manage system organizations and configurations.</p>
+                    </div>
                 </div>
-                <div>
-                    <h1 style={{ margin: 0, color: '#1E293B', fontSize: '1.5rem', fontWeight: 700 }}>Admin Settings</h1>
-                    <p style={{ margin: 0, color: '#64748B', fontSize: '0.85rem' }}>Manage system organizations and configurations.</p>
-                </div>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
                 {/* Left Col: Create Org */}
                 <div className="card animate-fade-up" style={{ padding: '1.5rem', height: 'max-content' }}>
                     <h2 style={{ fontSize: '1.1rem', margin: '0 0 1rem', color: '#0F172A' }}>Create Organization</h2>
@@ -123,12 +129,8 @@ export default function AdminPage() {
                         </div>
                     )}
                 </div>
+                </div>
             </div>
-            
-            <style>{`
-                .animate-spin { animation: spin 1s linear infinite; }
-                @keyframes spin { 100% { transform: rotate(360deg); } }
-            `}</style>
-        </div>
+        </Layout>
     );
 }

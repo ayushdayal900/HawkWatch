@@ -40,7 +40,7 @@ router.use(protect);
 router.get  ('/stats',   getStats);
 router.get  ('/history', authorize('student'), getHistory);
 router.post ('/start',   startExam);
-router.post ('/submit',  submitExam);
+router.post ('/:id/submit', authorize('student'), submitExam);
 router.post ('/:id/save-answer', authorize('student'), require('../controllers/exam.controller').saveAnswer);
 router.get  ('/session/:examId', authorize('student'), require('../controllers/exam.controller').getExamSession);
 router.get  ('/attempt/:id',     require('../controllers/exam.controller').getExamAttempt);

@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api, { proctoringAPI } from '../services/api';
 import ProctoringOverlay from '../components/ProctoringOverlay';
 import { AlertTriangle, RefreshCw, Loader2, ShieldAlert } from 'lucide-react';
+import useNotificationStore from '../store/notificationStore';
+import toast from 'react-hot-toast';
 
 import useExamStore from '../store/examStore';
 import ExamHeader from '../components/exam/ExamHeader';
@@ -43,10 +45,13 @@ export default function StudentExamPage() {
                     const { data: sessData } = await api.get(`/exams/session/${id}`);
                     sessionDetails = sessData.data || sessData;
                 } catch (getErr) {
-                    if (getErr.response?.status === 404 || getErr.response?.status === 400) {
+                    // Check direct status property (from standardized API service)
+                    const status = getErr.status || getErr.response?.status;
+                    
+                    if (status === 404 || status === 400) {
                         const { data: startData } = await api.post('/exams/start', { examId: id });
                         sessionDetails = startData.data || startData;
-                    } else if (getErr.response?.status === 403) {
+                    } else if (status === 403) {
                         navigate(`/exam-verification/${id}`);
                         return;
                     } else {
@@ -74,8 +79,9 @@ export default function StudentExamPage() {
                     const { data: procData } = await proctoringAPI.startSession({ examId: id });
                     if (mounted) setProcSessionId(procData?.data?._id || procData?._id || null);
                 } catch (procErr) {
-                    if (procErr.response?.status === 409) {
-                        const sid = procErr.response?.data?.sessionId;
+                    const status = procErr.status || procErr.response?.status;
+                    if (status === 409) {
+                        const sid = procErr.data?.sessionId || procErr.response?.data?.sessionId;
                         if (sid && mounted) setProcSessionId(sid);
                     }
                 }
@@ -138,11 +144,15 @@ export default function StudentExamPage() {
                 await proctoringAPI.endSession(procSessionId).catch(() => {});
             }
             const currentAnswers = useExamStore.getState().answers;
-            const { data } = await api.post('/exams/submit', { examId: id, answers: Object.entries(currentAnswers) });
+            const { data } = await api.post(`/exams/${id}/submit`, { examId: id, answers: Object.entries(currentAnswers) });
             
+            useNotificationStore.getState().addNotification(`Exam Completed: Your attempt for "${currentExam.title}" has been submitted successfully.`);
+
             navigate(`/student-exam-results/${data.data?.attemptId || data.attemptId}`, { replace: true });
         } catch (e) {
             setSubmitting(false);
+            setTerminatingReason(null);
+            toast.error(e.error || 'Submission failed. Please try again.');
         }
     }, [id, navigate, procSessionId, submitting]);
 
@@ -181,7 +191,7 @@ export default function StudentExamPage() {
     const activeQ = questions[currentQ];
 
     return (
-        <div className="exam-shell">
+        <div className="exam-shell" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
             {procSessionId && (
                 <ProctoringOverlay 
                     sessionId={procSessionId} 
@@ -190,15 +200,16 @@ export default function StudentExamPage() {
                 />
             )}
 
-            <ExamNavigation 
-                examTitle={currentExam.title} 
-                questions={questions} 
-                currentQ={currentQ} 
-                answers={answers} 
-                setCurrentQ={setCurrentQ} 
-            />
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+                <ExamNavigation 
+                    examTitle={currentExam.title} 
+                    questions={questions} 
+                    currentQ={currentQ} 
+                    answers={answers} 
+                    setCurrentQ={setCurrentQ} 
+                />
 
-            <main className="exam-main">
+                <main className="exam-main" style={{ flex: 1, overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {terminatingReason && (
                     <div className="modal-overlay" style={{ zIndex: 10000 }}>
                         <div className="modal-panel" style={{ textAlign: 'center', padding: '3rem' }}>
@@ -207,8 +218,19 @@ export default function StudentExamPage() {
                             </div>
                             <h2 style={{ color: 'var(--n-900)', fontWeight: 800, letterSpacing: '-0.02em' }}>Session Terminating</h2>
                             <p style={{ color: 'var(--n-500)', marginTop: '0.5rem' }}>{terminatingReason}</p>
-                            <div className="skeleton" style={{ height: 4, marginTop: '2rem', width: '100%' }} />
-                            <p style={{ fontSize: '0.75rem', color: 'var(--n-400)', marginTop: '1rem' }}>Auto-submitting your progress...</p>
+                            
+                            {!submitting ? (
+                                <div style={{ marginTop: '2rem' }}>
+                                    <button className="btn btn-primary" onClick={() => autoSubmit(terminatingReason)}>
+                                        Retry Submission
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="skeleton" style={{ height: 4, marginTop: '2rem', width: '100%' }} />
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--n-400)', marginTop: '1rem' }}>Auto-submitting your progress...</p>
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
@@ -239,7 +261,8 @@ export default function StudentExamPage() {
                     submitting={submitting} 
                     autoSubmit={autoSubmit} 
                 />
-            </main>
+                </main>
+            </div>
         </div>
     );
 }

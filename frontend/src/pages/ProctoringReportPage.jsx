@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { proctoringAPI } from '../services/api';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
 import AlertLogTable from '../components/AlertLogTable';
 import { ShieldAlert, Activity, FileText, ArrowLeft, Send, CheckCircle, Download } from 'lucide-react';
 
@@ -10,6 +12,11 @@ export default function ProctoringReportPage() {
     const [loading, setLoading] = useState(true);
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const { setPageTitle } = useUIStore();
+
+    useEffect(() => {
+        setPageTitle('Proctoring Analysis');
+    }, [setPageTitle]);
 
     useEffect(() => {
         const fetchReport = async () => {
@@ -54,7 +61,8 @@ export default function ProctoringReportPage() {
     const getSevColor = (sev) => ({ 'critical': '#DC2626', 'high': '#E11D48', 'medium': '#D97706', 'low': '#16A34A' }[sev] || '#64748B');
 
     return (
-        <div style={{ maxWidth: 1000, margin: '0 auto', padding: '2rem', fontFamily: 'Inter, sans-serif' }}>
+        <Layout>
+            <div className="animate-fade-in" style={{ width: '100%', maxWidth: 1000, margin: '0 auto', fontFamily: 'Inter, sans-serif' }}>
             <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <Link to="/examiner" style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', textDecoration: 'none', fontWeight: 600 }}>
                     <ArrowLeft size={16} /> Back to Dashboard
@@ -145,7 +153,7 @@ export default function ProctoringReportPage() {
             </div>
 
             {/* Sub-Metrics Container */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1.5rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
                 <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: '1.5rem' }}>
                     <h3 style={{ margin: '0 0 1rem', fontSize: '1.1rem', color: '#1E293B', display: 'flex', alignItems: 'center', gap: 6 }}><Activity size={18} /> Deepfake & Frame Analytics</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -218,6 +226,7 @@ export default function ProctoringReportPage() {
                     * { box-shadow: none !important; }
                 }
             `}</style>
-        </div>
+            </div>
+        </Layout>
     );
 }

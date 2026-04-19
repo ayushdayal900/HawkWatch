@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Sidebar from '../components/Sidebar';
 import StudentMonitorCard from '../components/StudentMonitorCard';
 import AlertLogTable from '../components/AlertLogTable';
 import useAuthStore from '../store/authStore';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
 import useProctoringStore from '../store/proctoringStore';
 import { examAPI } from '../services/api';
 import {
@@ -14,11 +14,11 @@ import {
 } from 'lucide-react';
 
 const FILTERS = [
-    { key: 'all',      label: 'All Active' },
+    { key: 'all', label: 'All Active' },
     { key: 'critical', label: 'Critical' },
-    { key: 'high',     label: 'High Risk' },
-    { key: 'medium',   label: 'Medium' },
-    { key: 'low',      label: 'Secure' },
+    { key: 'high', label: 'High Risk' },
+    { key: 'medium', label: 'Medium' },
+    { key: 'low', label: 'Secure' },
 ];
 
 function riskLevel(score) {
@@ -33,19 +33,21 @@ export default function MonitoringPage() {
     const { connectSocket, disconnectSocket, activeSessions, fetchActiveSessions, socket } = useProctoringStore();
     const navigate = useNavigate();
 
-    const [liveEvents,   setLiveEvents]   = useState([]);
-    const [exams,        setExams]        = useState([]);
-    const [filter,       setFilter]       = useState('all');
-    const [searchTerm,   setSearchTerm]   = useState('');
-    const [refreshing,   setRefreshing]   = useState(false);
+    const [liveEvents, setLiveEvents] = useState([]);
+    const [exams, setExams] = useState([]);
+    const [filter, setFilter] = useState('all');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [refreshing, setRefreshing] = useState(false);
     const [selectedExam, setSelectedExam] = useState(null);
+    const { setPageTitle } = useUIStore();
 
     useEffect(() => {
+        setPageTitle('Mission Control');
         examAPI.getAll().then(r => {
             const list = r.data.data || [];
             setExams(list);
             if (list.length > 0) setSelectedExam(list[0]._id);
-        }).catch(() => {});
+        }).catch(() => { });
     }, []);
 
     useEffect(() => {
@@ -72,7 +74,7 @@ export default function MonitoringPage() {
 
     const handleRefresh = async () => {
         setRefreshing(true);
-        await fetchActiveSessions().catch(() => {});
+        await fetchActiveSessions().catch(() => { });
         setTimeout(() => setRefreshing(false), 800);
     };
 
@@ -81,9 +83,9 @@ export default function MonitoringPage() {
             const sessionEvents = liveEvents.filter(e =>
                 e?.sessionId === s._id || (e?.studentId?._id || e?.studentId) === (s.student?._id || s.student)
             );
-            const flagCount  = sessionEvents.length;
-            const riskScore  = Math.min(100, flagCount * 8 + (s.riskScore || 0));
-            const lastFlag   = sessionEvents[0] || null;
+            const flagCount = sessionEvents.length;
+            const riskScore = Math.min(100, flagCount * 8 + (s.riskScore || 0));
+            const lastFlag = sessionEvents[0] || null;
             return { ...s, flagCount, riskScore, lastFlag, student: s.student || s.studentId };
         });
     }, [activeSessions, liveEvents]);
@@ -100,20 +102,17 @@ export default function MonitoringPage() {
     }, [sessionData, filter, searchTerm]);
 
     const stats = useMemo(() => ({
-        total:    sessionData.length,
+        total: sessionData.length,
         critical: sessionData.filter(s => s.riskScore >= 75).length,
-        flagged:  liveEvents.length,
-        avgRisk:  sessionData.length ? Math.round(sessionData.reduce((a, s) => a + s.riskScore, 0) / sessionData.length) : 0,
+        flagged: liveEvents.length,
+        avgRisk: sessionData.length ? Math.round(sessionData.reduce((a, s) => a + s.riskScore, 0) / sessionData.length) : 0,
     }), [sessionData, liveEvents]);
 
     return (
-        <div style={{ display: 'flex' }}>
-            <Sidebar />
-            <main className="main-content">
-                <Navbar title="Mission Control" />
-
+        <Layout>
+            <div className="animate-fade-in">
                 {/* Metrics */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
                     {[
                         { icon: Users, label: 'Active Candidates', value: stats.total, color: 'var(--brand-500)' },
                         { icon: ShieldAlert, label: 'Critical Incidents', value: stats.critical, color: 'var(--danger)' },
@@ -133,7 +132,7 @@ export default function MonitoringPage() {
                 </div>
 
                 {/* Command Bar */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', background: '#fff', padding: '0.75rem', borderRadius: 12, border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', background: '#fff', padding: '0.75rem', borderRadius: 12, border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap' }}>
                     <div style={{ position: 'relative', width: 220 }}>
                         <Shield size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
                         <select className="input" style={{ paddingLeft: '2.5rem', height: '2.5rem', appearance: 'none', border: 'none', background: 'var(--n-50)' }} value={selectedExam || ''} onChange={e => setSelectedExam(e.target.value)}>
@@ -162,7 +161,7 @@ export default function MonitoringPage() {
                 </div>
 
                 {/* Operations Floor */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '2rem', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem', alignItems: 'start' }}>
                     <div>
                         {visibleSessions.length === 0 ? (
                             <div className="card empty-state" style={{ padding: '4rem 2rem' }}>
@@ -182,27 +181,6 @@ export default function MonitoringPage() {
                             </div>
                         )}
                     </div>
-
-                    <div className="card" style={{ position: 'sticky', top: '2rem', maxHeight: 'calc(100vh - 12rem)', display: 'flex', flexDirection: 'column', background: 'var(--n-900)', border: '1px solid #1e293b' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', padding: '0.25rem 0.5rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--danger)', boxShadow: '0 0 10px var(--danger)', animation: 'pulse 2s infinite' }} />
-                                <h3 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    Live Telemetry Feed
-                                </h3>
-                            </div>
-                            <div className="badge badge-danger" style={{ fontSize: '0.65rem' }}>{liveEvents.length} EVENTS</div>
-                        </div>
-                        
-                        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
-                            <AlertLogTable events={liveEvents} darkVariant={true} />
-                        </div>
-
-                        <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.4)', fontSize: '0.7rem' }}>
-                            <Terminal size={12} />
-                            <span>Encrypted Websocket Stream Active</span>
-                        </div>
-                    </div>
                 </div>
 
                 <style>{`
@@ -212,7 +190,7 @@ export default function MonitoringPage() {
                         100% { opacity: 1; }
                     }
                 `}</style>
-            </main>
-        </div>
+            </div>
+        </Layout>
     );
 }

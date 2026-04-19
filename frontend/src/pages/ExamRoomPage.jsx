@@ -92,7 +92,7 @@ export default function ExamRoomPage() {
                 minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: 'radial-gradient(ellipse at 50% 30%, #111a30, #0a0f1e)'
             }}>
-                <div className="card animate-fade-up" style={{ maxWidth: 540, width: '100%', padding: '2.5rem' }}>
+                <div className="card animate-fade-up" style={{ maxWidth: 540, width: '90%', padding: '2rem' }}>
                     <h1 style={{ margin: '0 0 0.5rem', fontWeight: 700, fontSize: '1.4rem', color: '#f1f5f9' }}>{exam.title}</h1>
                     <p style={{ margin: '0 0 1.5rem', color: '#64748b', fontSize: '0.85rem' }}>{exam.description}</p>
 
@@ -157,7 +157,7 @@ export default function ExamRoomPage() {
                     </div>
                 </div>
 
-                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 280px', gap: 0 }}>
+                <div className="exam-layout" style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 0, overflow: 'hidden' }}>
                     {/* Question pane */}
                     <div style={{ padding: '2rem', overflowY: 'auto' }}>
                         {/* Question nav */}
@@ -228,7 +228,7 @@ export default function ExamRoomPage() {
                     </div>
 
                     {/* Proctoring panel */}
-                    <div style={{ background: '#0d1424', borderLeft: '1px solid rgba(255,255,255,0.06)', padding: '1.25rem', overflowY: 'auto' }}>
+                    <div style={{ background: '#0d1424', borderLeft: '1px solid rgba(255,255,255,0.06)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '1.25rem', overflowY: 'auto' }}>
                         <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
                             Proctoring Monitor
                         </div>

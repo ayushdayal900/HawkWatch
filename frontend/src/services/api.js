@@ -125,7 +125,14 @@ api.interceptors.response.use(
         }
 
         // Standardize error format
-        const errorMsg = error.response?.data?.message || error.message || 'An unexpected error occurred';
+        const data = error.response?.data;
+        let errorMsg = data?.message || error.message || 'An unexpected error occurred';
+        
+        // If it's a validation exception with multiple details, join them
+        if (data?.errors && Array.isArray(data.errors)) {
+            errorMsg = data.errors.join(' | ');
+        }
+
         return Promise.reject({
             success: false,
             error: errorMsg,
@@ -139,6 +146,7 @@ export const authAPI = {
     register: (data)         => api.post('/auth/register', data),
     login:    (data)         => api.post('/auth/login',    data),
     getMe:    ()             => api.get ('/auth/me'),
+    updateProfile: (data)    => api.patch('/auth/me', data),
     logout:   ()             => api.post('/auth/logout'),
     refresh:  (refreshToken) => api.post('/auth/refresh', { refreshToken }),
 };

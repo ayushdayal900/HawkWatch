@@ -1,10 +1,12 @@
+import React, { useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import {
     LayoutDashboard, BookOpen, Shield, BarChart3,
     Users, Settings, LogOut, Eye, Plus, Activity,
-    ChevronRight,
+    ChevronRight, X
 } from 'lucide-react';
+import useUIStore from '../store/uiStore';
 
 const navItems = {
     student: [
@@ -60,6 +62,14 @@ function NavGroup({ label, children }) {
 export default function Sidebar() {
     const { user, logout, isAdmin, isExaminer } = useAuthStore();
     const navigate = useNavigate();
+    const location = useLocation();
+    const { sidebarOpen, setSidebarOpen } = useUIStore();
+    
+    // Auto-close on route change (mobile)
+    useEffect(() => {
+        setSidebarOpen(false);
+    }, [location.pathname, setSidebarOpen]);
+
     const items = navItems[user?.role] || navItems.student;
 
     const handleLogout = async () => {
@@ -79,8 +89,30 @@ export default function Sidebar() {
     const initials = user?.name?.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || '?';
 
     return (
-    return (
-        <aside className="sidebar">
+        <>
+            {/* Mobile Overlay */}
+            {sidebarOpen && (
+                <div 
+                    className="sidebar-overlay show-mobile" 
+                    onClick={() => setSidebarOpen(false)} 
+                />
+            )}
+
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+                {/* Mobile Close Button */}
+                <button 
+                    className="show-mobile"
+                    onClick={() => setSidebarOpen(false)}
+                    style={{
+                        position: 'absolute', top: 20, right: 12,
+                        width: 36, height: 36, borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.05)', border: 'none',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'rgba(255,255,255,0.4)', cursor: 'pointer', zIndex: 10
+                    }}
+                >
+                    <X size={20} />
+                </button>
             {/* Logo */}
             <div style={{
                 padding: '1.75rem 1.25rem',
@@ -98,9 +130,6 @@ export default function Sidebar() {
                 <div>
                     <div style={{ fontWeight: 900, fontSize: '1.15rem', color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>
                         HawkWatch<span style={{ color: 'var(--brand-400)' }}>.</span>
-                    </div>
-                    <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800, marginTop: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                        AI Core v4.2
                     </div>
                 </div>
             </div>
@@ -200,5 +229,6 @@ export default function Sidebar() {
                 </button>
             </div>
         </aside>
+        </>
     );
 }

@@ -39,7 +39,7 @@ const validateRequest = (req) => {
 const register = asyncHandler(async (req, res) => {
     validateRequest(req);
 
-    const { name, email, password, institution, organization } = req.body;
+    const { name, email, password, institution, organization, newOrganizationName } = req.body;
 
     const allowedPublicRoles = ['student', 'examiner'];
     const role = allowedPublicRoles.includes(req.body.role) ? req.body.role : 'student';
@@ -49,7 +49,15 @@ const register = asyncHandler(async (req, res) => {
         throw new AppError('An account with this email already exists.', 409, 'EMAIL_TAKEN');
     }
 
-    const user = await User.create({ 
+    if (newOrganizationName && role === 'examiner') {
+        const Organization = require('../models/Organization');
+        const existingOrg = await Organization.findOne({ name: newOrganizationName.trim() });
+        if (existingOrg) {
+            throw new AppError('An organization with this name already exists.', 409, 'ORG_TAKEN');
+        }
+    }
+
+    let user = await User.create({ 
         name, 
         email, 
         password, 
@@ -57,6 +65,16 @@ const register = asyncHandler(async (req, res) => {
         institution,
         organization: organization || null
     });
+
+    if (newOrganizationName && role === 'examiner') {
+        const Organization = require('../models/Organization');
+        const newOrg = await Organization.create({
+            name: newOrganizationName.trim(),
+            createdBy: user._id
+        });
+        user.organization = newOrg._id;
+        await user.save({ validateBeforeSave: false });
+    }
 
     const { accessToken, refreshToken } = generateTokens(user);
     user.refreshToken = refreshToken;
@@ -164,4 +182,34 @@ const logout = asyncHandler(async (req, res) => {
     return res.status(200).json({ success: true, message: 'Logged out successfully.' });
 });
 
-module.exports = { register, login, refreshToken, getMe, logout };
+/* ─────────────────────────────────────────────────────────────────────────
+ * @route   PATCH /api/auth/me
+ * @access  Private
+ * ───────────────────────────────────────────────────────────────────────── */
+const updateProfile = asyncHandler(async (req, res) => {
+    const { name, currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user._id).select('+password');
+
+    if (name) {
+        user.name = name.trim();
+    }
+
+    if (currentPassword && newPassword) {
+        if (!(await user.comparePassword(currentPassword))) {
+            throw new AppError('Incorrect current password.', 400, 'INVALID_CREDENTIALS');
+        }
+        user.password = newPassword;
+    }
+
+    await user.save({ validateBeforeSave: false });
+
+    logger.info(`[Auth] Profile Updated: ${user.email}`);
+
+    return res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully.',
+        user: publicUser(user),
+    });
+});
+
+module.exports = { register, login, refreshToken, getMe, logout, updateProfile };

@@ -1,21 +1,20 @@
-import { Bell, Search, X, Check, User, Settings, LogOut, Calendar, ShieldCheck } from 'lucide-react';
+import { Bell, Search, X, Check, User, Settings, LogOut, Calendar, ShieldCheck, Menu } from 'lucide-react';
+import useUIStore from '../store/uiStore';
 import useAuthStore from '../store/authStore';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const MOCK_NOTIFICATIONS = [
-    { id: 1, text: 'Neural analysis for "Physics 101" complete.', time: '2m ago', read: false },
-    { id: 2, text: 'System security update deployed.', time: '15m ago', read: false },
-    { id: 3, text: 'Session report #842 validated.', time: '1h ago', read: true },
-];
+import useNotificationStore from '../store/notificationStore';
 
-export default function Navbar({ title = 'Dashboard' }) {
+export default function Navbar() {
     const { user, logout } = useAuthStore();
+    const { toggleSidebar, pageTitle } = useUIStore();
     const navigate = useNavigate();
 
     const [showNotifs, setShowNotifs] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+
+    const { notifications, markAllRead, clearAll, getTimeAgo } = useNotificationStore();
 
     const notifRef = useRef(null);
     const profileRef = useRef(null);
@@ -31,7 +30,7 @@ export default function Navbar({ title = 'Dashboard' }) {
         return () => document.removeEventListener('mousedown', handleClick);
     }, []);
 
-    const markAllRead = () => setNotifications(n => n.map(x => ({ ...x, read: true })));
+
 
     const handleLogout = async () => {
         await logout();
@@ -48,39 +47,56 @@ export default function Navbar({ title = 'Dashboard' }) {
     return (
         <header style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginBottom: '2.5rem', paddingBottom: '1.25rem',
+            marginBottom: 'var(--section-spacing, 2.5rem)', paddingBottom: '1.25rem',
             borderBottom: '1px solid var(--border)',
+            gap: '1rem'
         }}>
-            {/* Title & Context */}
-            <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <h1 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--n-900)', margin: 0, letterSpacing: '-0.03em' }}>
-                        {title}
-                    </h1>
-                    <div className="badge badge-info" style={{ fontSize: '0.65rem', padding: '2px 8px' }}>SECURE SESSION</div>
+            {/* Left: Mobile Toggle + Title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <button
+                    className="show-mobile btn-icon"
+                    onClick={toggleSidebar}
+                    style={{ background: 'var(--n-50)', border: '1px solid var(--border)', borderRadius: 10 }}
+                >
+                    <Menu size={20} color="var(--n-700)" />
+                </button>
+
+                <div className="hide-mobile">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <h1 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--n-900)', margin: 0, letterSpacing: '-0.03em' }}>
+                            {pageTitle}
+                        </h1>
+                        <div className="badge badge-info hide-mobile" style={{ fontSize: '0.65rem', padding: '2px 8px' }}>SECURE SESSION</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--n-400)', fontSize: '0.8rem', fontWeight: 600 }}>
+                        <Calendar size={14} />
+                        {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                    </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--n-400)', fontSize: '0.8rem', fontWeight: 600 }}>
-                    <Calendar size={14} />
-                    {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+
+                <div className="show-mobile">
+                    <h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--n-900)', margin: 0, letterSpacing: '-0.03em' }}>
+                        {pageTitle}
+                    </h1>
                 </div>
             </div>
 
             {/* Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 {/* Global Search */}
-                <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative' }} className="hide-mobile">
                     <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
                     <input
                         className="input"
                         placeholder="Search system..."
-                        style={{ paddingLeft: '2.75rem', width: 240, height: '2.5rem', fontSize: '0.875rem' }}
+                        style={{ paddingLeft: '2.75rem', width: 200, height: '2.5rem', fontSize: '0.875rem' }}
                     />
                 </div>
 
                 {/* Notifications */}
                 <div ref={notifRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => { setShowNotifs(v => !v); setShowProfile(false); }}
+                        onClick={() => { setShowNotifs(v => { if (!v) markAllRead(); return !v; }); setShowProfile(false); }}
                         style={{
                             width: 42, height: 42, borderRadius: 12, border: '1px solid var(--border)',
                             background: showNotifs ? 'var(--brand-50)' : '#fff', cursor: 'pointer',
@@ -106,7 +122,7 @@ export default function Navbar({ title = 'Dashboard' }) {
                         <div style={DROPDOWN_STYLE}>
                             <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--n-50)' }}>
                                 <span style={{ fontWeight: 800, fontSize: '0.875rem', color: 'var(--n-900)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Alerts</span>
-                                <button onClick={markAllRead} style={{ fontSize: '0.75rem', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <button onClick={clearAll} style={{ fontSize: '0.75rem', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                                     <Check size={14} /> Clear All
                                 </button>
                             </div>
@@ -116,7 +132,7 @@ export default function Navbar({ title = 'Dashboard' }) {
                                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: n.read ? 'var(--n-200)' : 'var(--brand-500)', flexShrink: 0, marginTop: 6 }} />
                                         <div>
                                             <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--n-800)', lineHeight: 1.5, fontWeight: n.read ? 400 : 600 }}>{n.text}</p>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--n-400)', marginTop: 4, display: 'block' }}>{n.time}</span>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--n-400)', marginTop: 4, display: 'block' }}>{getTimeAgo(n.time)}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -158,7 +174,7 @@ export default function Navbar({ title = 'Dashboard' }) {
                                 </div>
                             </div>
                             <div style={{ padding: '0.5rem' }}>
-                                <button onClick={() => setShowProfile(false)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--n-700)', textAlign: 'left', borderRadius: 8, transition: 'background 0.2s' }}
+                                <button onClick={() => { setShowProfile(false); navigate('/settings'); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--n-700)', textAlign: 'left', borderRadius: 8, transition: 'background 0.2s' }}
                                     onMouseEnter={e => e.currentTarget.style.background = 'var(--n-50)'}
                                     onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                                     <User size={16} color="var(--n-400)" /> Account Settings

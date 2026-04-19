@@ -13,14 +13,19 @@ const useUIStore = create((set, get) => ({
     // Camera permission state
     cameraPermission: null,
 
+    // Page context
+    pageTitle: 'Dashboard',
+
     // Global toast notifications queue
     toasts: [],
 
-    // Modal state
-    activeModal: null,
-    modalData: null,
+    // Sidebar state
+    sidebarOpen: false,
 
     // Actions
+    setPageTitle: (pageTitle) => set({ pageTitle }),
+    setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+    toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
     setLoading: (loading, message = '') => set({ loading, loadingMessage: message }),
     setTheme: (theme) => set({ theme }),
     setCameraPermission: (status) => set({ cameraPermission: status }),

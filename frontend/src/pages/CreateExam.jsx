@@ -1,14 +1,14 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Sidebar from '../components/Sidebar';
 import { examAPI, organizationAPI } from '../services/api';
-import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
+import toast from 'react-hot-toast';
 import {
     Plus, Trash2, Save, Send, ChevronDown, ChevronUp,
     BookOpen, Clock, Target, Shield, CheckCircle,
-    Info, Settings, Layout, Award, AlertCircle, Eye
+    Info, Settings, Layout as LayoutIcon, Award, AlertCircle, Eye
 } from 'lucide-react';
 
 const LABELS = ['A', 'B', 'C', 'D'];
@@ -142,7 +142,7 @@ function QuestionCard({ question, index, onChange, onRemove, collapsed, onToggle
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
                         <div>
                             <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Points Allocation</label>
                             <input className="input" type="number" min={1} value={question.points} onChange={(e) => onChange('points', parseInt(e.target.value) || 1)} />
@@ -181,8 +181,10 @@ export default function CreateExam() {
     });
     const [organizations, setOrganizations] = useState([]);
     const user = useAuthStore(state => state.user);
+    const { setPageTitle } = useUIStore();
 
     useEffect(() => {
+        setPageTitle('Exam Architect');
         const fetchOrgs = async () => {
             try {
                 const { data } = await organizationAPI.getAll();
@@ -219,7 +221,17 @@ export default function CreateExam() {
 
     const validate = () => {
         if (!form.title.trim()) { toast.error('Exam title is required.'); return false; }
+        if (form.title.trim().length < 3) { toast.error('Exam title must be at least 3 characters.'); return false; }
         if (form.questions.length === 0) { toast.error('Add at least one question.'); return false; }
+        
+        // Deep validate questions
+        for (let i = 0; i < form.questions.length; i++) {
+            if (!form.questions[i].questionText.trim()) {
+                toast.error(`Question ${i + 1} has no text content.`);
+                setCollapsed(p => ({ ...p, [i]: false })); // Expand the problematic question
+                return false;
+            }
+        }
         return true;
     };
 
@@ -227,10 +239,18 @@ export default function CreateExam() {
         if (!form.title.trim()) return toast.error('Enter a title first.');
         setSaving(true);
         try {
-            await examAPI.create({ ...form, status: 'draft' });
+            const payload = {
+                ...form,
+                instructions: form.instructions ? [form.instructions] : [],
+                organization: form.organization || null,
+                status: 'draft'
+            };
+            await examAPI.create(payload);
             toast.success('Draft saved successfully!');
             navigate('/exams');
-        } catch (err) { toast.error('Save failed.'); }
+        } catch (err) { 
+            toast.error(err.error || 'Save failed.'); 
+        }
         finally { setSaving(false); }
     };
 
@@ -238,23 +258,33 @@ export default function CreateExam() {
         if (!validate()) return;
         setPublishing(true);
         try {
-            const { data } = await examAPI.create({ ...form, status: 'draft' });
-            await examAPI.publish(data.data._id);
+            const payload = {
+                ...form,
+                instructions: form.instructions ? [form.instructions] : [],
+                organization: form.organization || null,
+                status: 'draft'
+            };
+            const { data } = await examAPI.create(payload);
+            const examId = data.data?._id || data._id;
+            
+            if (!examId) throw new Error('Failed to retrieve exam ID.');
+            
+            await examAPI.publish(examId);
             toast.success('Exam is now LIVE!');
             navigate('/exams');
-        } catch (err) { toast.error('Publish failed.'); }
+        } catch (err) { 
+            toast.error(err.error || 'Publish failed.'); 
+        }
         finally { setPublishing(false); }
     };
 
     return (
-        <div style={{ display: 'flex' }}>
-            <Sidebar />
-            <main className="main-content">
-                <Navbar title="Exam Architect" />
+        <Layout>
+            <div className="animate-fade-in">
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2rem', maxWidth: 1200, margin: '0 auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem', maxWidth: 1200, margin: '0 auto', alignItems: 'start' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <Section title="General Information" icon={Layout}>
+                        <Section title="General Information" icon={LayoutIcon}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Title</label>
@@ -288,7 +318,7 @@ export default function CreateExam() {
                                 <CustomToggle label="Enable Master Proctoring" description="Activate the AI-based monitoring suite" checked={form.proctoring.enabled} onChange={() => setProctoring('enabled', !form.proctoring.enabled)} />
                             </div>
                             {form.proctoring.enabled && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
                                     <CustomToggle label="Liveness Check" checked={form.proctoring.faceDetection} onChange={() => setProctoring('faceDetection', !form.proctoring.faceDetection)} />
                                     <CustomToggle label="Full Screen Mode" checked={form.proctoring.fullscreenRequired} onChange={() => setProctoring('fullscreenRequired', !form.proctoring.fullscreenRequired)} />
                                     <CustomToggle label="Deepfake Shield" checked={form.proctoring.deepfakeDetection} onChange={() => setProctoring('deepfakeDetection', !form.proctoring.deepfakeDetection)} />
@@ -346,13 +376,13 @@ export default function CreateExam() {
                             <Send size={20} /> {publishing ? 'Publishing...' : 'Go Live Now'}
                         </button>
                         {!form.questions.length && (
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '0.75rem', borderRadius: 8, background: 'var(--n-50)', color: 'var(--n-500)', fontSize: '0.7rem' }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '0.75rem', borderRadius: 8, background: 'var(--n-50)', color: 'var(--n-500)', fontSize: '0.7rem', marginTop: '1rem' }}>
                                 <AlertCircle size={14} /> Add questions to enable publishing.
                             </div>
                         )}
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </Layout>
     );
 }

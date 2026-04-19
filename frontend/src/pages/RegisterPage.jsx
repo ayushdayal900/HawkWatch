@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import { organizationAPI } from '../services/api';
+import useNotificationStore from '../store/notificationStore';
 import {
     Eye, EyeOff, ShieldCheck,
     AlertCircle, CheckCircle2, Loader2,
@@ -90,6 +91,7 @@ export default function RegisterPage() {
     });
     const [organizations, setOrganizations] = useState([]);
     const [fetchingOrgs, setFetchingOrgs] = useState(true);
+    const [newOrgName, setNewOrgName] = useState('');
     const [showPwd, setShowPwd] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errors,  setErrors]  = useState({});
@@ -114,6 +116,9 @@ export default function RegisterPage() {
         if (!form.email.trim()) e.email = 'Required';
         else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid format';
         if (!form.password) e.password = 'Required';
+        if (form.role === 'examiner' && form.organization === 'create_new' && !newOrgName.trim()) {
+            e.newOrgName = 'Required';
+        }
         setErrors(e);
         return Object.keys(e).length === 0;
     };
@@ -129,8 +134,13 @@ export default function RegisterPage() {
                 email:       form.email.trim(),
                 password:    form.password,
                 role:        form.role,
-                organization: form.organization === 'individual' || form.organization === '' ? null : form.organization,
+                organization: (form.organization === 'individual' || form.organization === '' || form.organization === 'create_new') ? null : form.organization,
+                newOrganizationName: (form.role === 'examiner' && form.organization === 'create_new') ? newOrgName.trim() : undefined,
             });
+            
+            // Add a welcome notification
+            useNotificationStore.getState().addNotification('Welcome to HawkWatch! Your account has been created successfully.');
+            
             toast.success('Account created! Welcome to HawkWatch. 🦅');
             navigate('/dashboard', { replace: true });
         } catch (err) {
@@ -154,9 +164,9 @@ export default function RegisterPage() {
     return (
         <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
 
-            {/* ── Left Panel ─────────────────────────────────────────── */}
-            <div style={{
-                width: '40%', flexShrink: 0,
+            {/* Left Panel: Desktop Only */}
+            <div className="hide-mobile" style={{
+                flex: 1,
                 background: 'linear-gradient(165deg, #020617 0%, #0f172a 50%, #1e1b4b 100%)',
                 display: 'flex', flexDirection: 'column',
                 padding: '4rem 3.5rem',
@@ -212,19 +222,12 @@ export default function RegisterPage() {
                         </div>
                     </div>
 
-                    <div style={{ paddingTop: '2.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 12 }}>
-                        <div className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', border: 'none' }}>
-                            <Zap size={10} style={{ marginRight: 4 }} /> v4.2 Stable
-                        </div>
-                        <div className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', border: 'none' }}>
-                            <Shield size={10} style={{ marginRight: 4 }} /> ISO 27001
-                        </div>
-                    </div>
+
                 </div>
             </div>
 
             {/* ── Right Panel ─────────────────────────────────────────── */}
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem 2rem', overflowY: 'auto' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', overflowY: 'auto', minHeight: '100vh' }}>
                 <div style={{ width: '100%', maxWidth: 520 }}>
                     <div style={{ marginBottom: '2.5rem' }}>
                         <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--n-900)', letterSpacing: '-0.02em', margin: '0 0 0.5rem' }}>
@@ -236,7 +239,7 @@ export default function RegisterPage() {
                     </div>
 
                     <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
                             <div>
                                 <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-700)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, display: 'block' }}>Full Name</label>
                                 <div style={{ position: 'relative' }}>
@@ -259,11 +262,23 @@ export default function RegisterPage() {
                                 <select className="input" disabled={fetchingOrgs} style={{ height: '2.75rem', paddingLeft: '2.5rem', appearance: 'none' }} {...field('organization')}>
                                     <option value="">Select Organization (Optional)</option>
                                     <option value="individual">No Organization / Independent</option>
+                                    {form.role === 'examiner' && <option value="create_new">+ Create New Organization</option>}
                                     {organizations.map((org) => <option key={org._id} value={org._id}>{org.name}</option>)}
                                 </select>
                                 <Building size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
                             </div>
                         </div>
+
+                        {form.organization === 'create_new' && form.role === 'examiner' && (
+                            <div>
+                                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-700)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, display: 'block' }}>New Organization Name</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input className="input" type="text" placeholder="Acme University" value={newOrgName} onChange={(e) => { setNewOrgName(e.target.value); if (errors.newOrgName) setErrors({ ...errors, newOrgName: '' }); }} style={{ height: '2.75rem', paddingLeft: '2.5rem', ...(errors.newOrgName ? { borderColor: 'var(--danger)', background: 'var(--danger-bg)' } : {}) }} />
+                                    <Building size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
+                                </div>
+                                {errors.newOrgName && <span style={{ color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginTop: '4px' }}>{errors.newOrgName}</span>}
+                            </div>
+                        )}
 
                         <div>
                             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-700)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, display: 'block' }}>Security Key</label>
@@ -279,7 +294,7 @@ export default function RegisterPage() {
 
                         <div>
                             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-700)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10, display: 'block' }}>Primary Role</label>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                                 {ROLES.map((r) => {
                                     const active = form.role === r.value;
                                     return (

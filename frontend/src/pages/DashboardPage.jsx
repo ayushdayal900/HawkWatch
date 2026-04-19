@@ -8,10 +8,9 @@
  */
 
 import { useEffect, useState, useMemo } from 'react';
-import Navbar           from '../components/Navbar';
-import Sidebar          from '../components/Sidebar';
-import { examAPI }      from '../services/api';
 import useAuthStore from '../store/authStore';
+import useUIStore from '../store/uiStore';
+import Layout from '../components/Layout';
 import {
     BarChart3, Users, BookOpen, ShieldCheck, TrendingUp,
     Clock, CheckCircle, FileText, ChevronRight, Activity, Zap
@@ -68,8 +67,8 @@ function RecentExamRow({ exam, isStudent }) {
 
     const statusCfg = {
         published: { cls: 'badge-success', label: 'Live' },
-        draft:     { cls: 'badge-warning', label: 'Draft' },
-        active:    { cls: 'badge-info',    label: 'Active' },
+        draft: { cls: 'badge-warning', label: 'Draft' },
+        active: { cls: 'badge-info', label: 'Active' },
         completed: { cls: 'badge-neutral', label: 'Finished' },
     };
     const cfg = statusCfg[exam.status] || { cls: 'badge-neutral', label: exam.status };
@@ -99,11 +98,14 @@ const emptyChart = WEEK_DAYS.map((d) => ({ date: d, attempts: 0, flags: 0 }));
 
 export default function DashboardPage() {
     const { user, isStudent } = useAuthStore();
-    const [stats,   setStats]   = useState(null);
-    const [exams,   setExams]   = useState([]);
+    const [stats, setStats] = useState(null);
+    const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    const { setPageTitle } = useUIStore();
+
     useEffect(() => {
+        setPageTitle('Dashboard');
         const fetchData = async () => {
             try {
                 const promises = [examAPI.getStats(), examAPI.getAll()];
@@ -123,52 +125,57 @@ export default function DashboardPage() {
 
     const statCards = isStudent
         ? [
-            { icon: BookOpen,    label: 'Total Attempts',   value: stats?.total  ?? '—', sub: 'Completed exams', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
-            { icon: CheckCircle, label: 'Success Rate',     value: stats?.total ? `${Math.round((stats.passed / stats.total) * 100)}%` : '—', sub: `${stats?.passed || 0} exams passed`, color: 'var(--success)', bg: 'var(--success-bg)' },
-            { icon: Clock,       label: 'Avg. Score',       value: stats?.avgScore ?? '—', sub: 'Across all tests', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-            { icon: FileText,    label: 'Open Exams',       value: stats?.available ?? '—', sub: 'Available to take', color: 'var(--info)', bg: 'var(--info-bg)' },
+            { icon: BookOpen, label: 'Total Attempts', value: stats?.total ?? '—', sub: 'Completed exams', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
+            { icon: CheckCircle, label: 'Success Rate', value: stats?.total ? `${Math.round((stats.passed / stats.total) * 100)}%` : '—', sub: `${stats?.passed || 0} exams passed`, color: 'var(--success)', bg: 'var(--success-bg)' },
+            { icon: Clock, label: 'Avg. Score', value: stats?.avgScore ?? '—', sub: 'Across all tests', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+            { icon: FileText, label: 'Open Exams', value: stats?.available ?? '—', sub: 'Available to take', color: 'var(--info)', bg: 'var(--info-bg)' },
         ]
         : [
-            { icon: Users,       label: 'Total Students',   value: stats?.students  ?? '—', sub: 'Across organizations', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
-            { icon: ShieldCheck, label: 'Active Sessions',  value: stats?.active    ?? '—', sub: 'Currently monitored', color: 'var(--success)', bg: 'var(--success-bg)' },
-            { icon: Activity,    label: 'Total Flags',      value: stats?.flags     ?? '—', sub: 'AI detections', color: 'var(--danger)', bg: 'var(--danger-bg)' },
-            { icon: Zap,         label: 'System Health',    value: '99.8%',         sub: 'AI API Latency: 42ms', color: 'var(--info)', bg: 'var(--info-bg)' },
+            { icon: Users, label: 'Total Students', value: stats?.students ?? '—', sub: 'Across organizations', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
+            { icon: ShieldCheck, label: 'Active Sessions', value: stats?.active ?? '—', sub: 'Currently monitored', color: 'var(--success)', bg: 'var(--success-bg)' },
+            { icon: Activity, label: 'Total Flags', value: stats?.flags ?? '—', sub: 'AI detections', color: 'var(--danger)', bg: 'var(--danger-bg)' },
+            { icon: Zap, label: 'System Health', value: '99.8%', sub: 'AI API Latency: 42ms', color: 'var(--info)', bg: 'var(--info-bg)' },
         ];
 
     return (
-        <div style={{ display: 'flex' }}>
-            <Sidebar />
-            <main className="main-content">
-                <Navbar title="Dashboard" />
-
+        <Layout>
+            <div className="animate-fade-in">
                 {/* Hero Greeting */}
-                <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                    <div>
+                <div style={{
+                    marginBottom: '2rem',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
+                    flexWrap: 'wrap',
+                    gap: '1rem'
+                }}>
+                    <div style={{ flex: '1 1 300px' }}>
                         <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: 'var(--n-900)', letterSpacing: '-0.02em' }}>
                             Welcome back, {user?.name?.split(' ')[0]}
                         </h2>
                         <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: 'var(--n-500)' }}>
-                            {isStudent 
-                                ? "Here's your academic performance at a glance." 
+                            {isStudent
+                                ? "Here's your academic performance at a glance."
                                 : "Manage your exams and monitor live sessions in real-time."}
                         </p>
                     </div>
                     {isStudent && (
-                        <a href="/exams" className="btn btn-primary">
+                        <a href="/exams" className="btn btn-primary hide-mobile">
                             <BookOpen size={16} /> Start New Exam
                         </a>
                     )}
                 </div>
 
                 {/* Stat Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+                <div className="responsive-grid section-margin">
                     {statCards.map((s) => (
                         <StatCard key={s.label} {...s} loading={loading} />
                     ))}
                 </div>
 
                 {/* Main Content Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div className="dashboard-main-grid section-margin">
                     {/* Activity Chart */}
                     <div className="card animate-fade-up">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
@@ -180,43 +187,43 @@ export default function DashboardPage() {
                             </div>
                             <div className="badge badge-info" style={{ borderRadius: 6 }}>Last 7 Days</div>
                         </div>
-                        
+
                         <ResponsiveContainer width="100%" height={260}>
                             <AreaChart data={emptyChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorAttempts" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="var(--brand-500)" stopOpacity={0.15}/>
-                                        <stop offset="95%" stopColor="var(--brand-500)" stopOpacity={0}/>
+                                        <stop offset="5%" stopColor="var(--brand-500)" stopOpacity={0.15} />
+                                        <stop offset="95%" stopColor="var(--brand-500)" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                                <XAxis 
-                                    dataKey="date" 
-                                    axisLine={false} 
-                                    tickLine={false} 
+                                <XAxis
+                                    dataKey="date"
+                                    axisLine={false}
+                                    tickLine={false}
                                     tick={{ fill: 'var(--n-400)', fontSize: 11, fontWeight: 500 }}
                                     dy={10}
                                 />
-                                <YAxis 
-                                    axisLine={false} 
-                                    tickLine={false} 
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
                                     tick={{ fill: 'var(--n-400)', fontSize: 11, fontWeight: 500 }}
                                 />
-                                <Tooltip 
-                                    contentStyle={{ 
-                                        borderRadius: 'var(--r-md)', 
-                                        border: 'none', 
+                                <Tooltip
+                                    contentStyle={{
+                                        borderRadius: 'var(--r-md)',
+                                        border: 'none',
                                         boxShadow: 'var(--shadow-lg)',
                                         fontSize: '0.8rem'
-                                    }} 
+                                    }}
                                 />
-                                <Area 
-                                    type="monotone" 
-                                    dataKey="attempts" 
-                                    stroke="var(--brand-500)" 
-                                    strokeWidth={3} 
-                                    fillOpacity={1} 
-                                    fill="url(#colorAttempts)" 
+                                <Area
+                                    type="monotone"
+                                    dataKey="attempts"
+                                    stroke="var(--brand-500)"
+                                    strokeWidth={3}
+                                    fillOpacity={1}
+                                    fill="url(#colorAttempts)"
                                 />
                             </AreaChart>
                         </ResponsiveContainer>
@@ -238,7 +245,7 @@ export default function DashboardPage() {
                                 View all <ChevronRight size={14} />
                             </a>
                         </div>
-                        
+
                         <div style={{ flex: 1 }}>
                             {loading ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -259,7 +266,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Bottom Row: System Status + Action */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div className="dashboard-main-grid">
                     <div className="card animate-fade-up" style={{ background: 'var(--n-900)', border: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem' }}>
                             <Activity size={18} color="var(--brand-400)" />
@@ -293,7 +300,7 @@ export default function DashboardPage() {
                         </div>
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </Layout>
     );
 }

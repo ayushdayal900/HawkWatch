@@ -89,6 +89,15 @@ const useAuthStore = create(
                     set({ user: null, token: null, refreshToken: null, isAdmin: false, isExaminer: false, isStudent: false });
                 }
             },
+
+            updateProfile: async (data) => {
+                const { data: resData } = await authAPI.updateProfile(data);
+                const updatedUser = resData.data?.user || resData.user;
+                set(state => ({
+                    user: { ...state.user, ...updatedUser }
+                }));
+                return updatedUser;
+            },
         }),
         {
             name: 'hawkwatch-auth',
