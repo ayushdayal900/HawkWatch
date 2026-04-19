@@ -19,9 +19,10 @@
 
 const axios = require('axios');
 const logger = require('../utils/logger');
+const config = require('../config');
 
-const AI_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const AI_KEY = process.env.AI_SERVICE_API_KEY || '';
+const AI_BASE = config.aiService.url || 'http://localhost:8000';
+const AI_KEY = config.aiService.apiKey || '';
 
 const aiClient = axios.create({
     baseURL: AI_BASE,
@@ -163,8 +164,8 @@ async function analyzeBehavior(typingRhythm, mouseDynamics, baseline) {
 async function generateFlags(result) {
     const flags = [];
     const thresholds = {
-        FACE_CONFIDENCE: parseFloat(process.env.FACE_CONFIDENCE_THRESHOLD || '0.7'),
-        DEEPFAKE_SCORE: parseFloat(process.env.DEEPFAKE_SCORE_THRESHOLD || '0.6'),
+        FACE_CONFIDENCE: parseFloat(config.thresholds.faceConfidence || '0.7'),
+        DEEPFAKE_SCORE: parseFloat(config.thresholds.deepfakeScore || '0.6'),
         GAZE_DEVIATION: true,
     };
 

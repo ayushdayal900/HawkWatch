@@ -18,12 +18,12 @@ HawkWatch/
 │   └── vite.config.js      # Tailwind v4 plugin + API proxy
 │
 ├── server/                 # Node.js + Express REST API (port 5000)
+│   ├── config/             # Centralized Configuration (Joi Validated)
 │   ├── models/             # User, Exam, ProctoringSession, ExamAttempt
 │   ├── controllers/        # auth, exam, proctoring
 │   ├── routes/             # /api/auth, /api/exams, /api/proctoring
 │   ├── middleware/         # JWT auth, role-based access, error handler
 │   ├── services/           # aiProctoring.service.js (Node ↔ Python bridge)
-│   ├── config/             # MongoDB connection
 │   └── server.js           # Express + Socket.IO entry point
 │
 ├── ai-service/             # Python FastAPI AI Microservice (port 8000)
@@ -106,6 +106,20 @@ Risk Score (0–100) =
 | POST | `/:id/analyze-frame` | student |
 | POST | `/:id/behavioral` | student |
 | GET  | `/:id/report` | examiner, admin |
+
+---
+
+## Configuration Management
+
+The backend uses a centralized configuration module (`server/config/index.js`) powered by **Joi** schema validation. This ensures the app fails fast at startup if critical environment variables are missing or incorrectly formatted.
+
+**Important:** You must not access `process.env` directly in the backend codebase (outside of `server/config/index.js`). All environment variables must be registered in the schema and accessed through the exported config object.
+
+```javascript
+// Example usage:
+const config = require('./config');
+console.log(config.database.url);
+```
 
 ---
 

@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server: SocketIO } = require('socket.io');
@@ -9,6 +8,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 
+const config = require('./config');
 const connectDB = require('./config/db');
 const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
@@ -30,13 +30,13 @@ const { Redis } = require('ioredis');
 // ─── Socket.IO (real-time proctoring events) ─────────────────────────────────
 const io = new SocketIO(server, {
     cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:5173',
+        origin: config.clientUrl || 'http://localhost:5173',
         methods: ['GET', 'POST'],
     },
 });
 
-if (process.env.REDIS_URL) {
-    const pubClient = new Redis(process.env.REDIS_URL);
+if (config.redis && config.redis.url) {
+    const pubClient = new Redis(config.redis.url);
     const subClient = pubClient.duplicate();
     io.adapter(createAdapter(pubClient, subClient));
     logger.info('Connected Socket.IO to Redis Adapter.');
@@ -70,7 +70,7 @@ io.on('connection', (socket) => {
 // ─── Security Middleware ──────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: config.clientUrl || 'http://localhost:5173',
     credentials: true,
 }));
 app.use(mongoSanitize());
@@ -78,8 +78,8 @@ app.use(compression());
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-    max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
+    windowMs: parseInt(config.security.rateLimitWindowMs || '900000'),
+    max: parseInt(config.security.rateLimitMax || '100'),
     message: { success: false, message: 'Too many requests. Please try again later.' },
 });
 app.use('/api/', limiter);
@@ -119,14 +119,19 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+const PORT = config.port || 5000;
 
 const startServer = async () => {
-    await connectDB();
-    server.listen(PORT, () => {
-        logger.info(`🚀 HawkWatch API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
-        logger.info(`🔗 Health: http://localhost:${PORT}/api/health`);
-    });
+    try {
+        await connectDB();
+        server.listen(PORT, () => {
+            logger.info(`🚀 HawkWatch API running on port ${PORT} [${config.env || 'development'}]`);
+            logger.info(`🔗 Health: http://localhost:${PORT}/api/health`);
+        });
+    } catch (error) {
+        logger.error(`Error starting server: ${error.message}`);
+        process.exit(1);
+    }
 };
 
 startServer();
@@ -134,6 +139,13 @@ startServer();
 // Graceful shutdown
 process.on('SIGTERM', async () => {
     logger.info('SIGTERM received. Shutting down gracefully...');
+    server.close(() => {
+        logger.info('HTTP server closed.');
+        process.exit(0);
+    });
+});
+process.on('SIGINT', async () => {
+    logger.info('SIGINT received. Shutting down gracefully...');
     server.close(() => {
         logger.info('HTTP server closed.');
         process.exit(0);

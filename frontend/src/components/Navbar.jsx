@@ -1,16 +1,16 @@
-import { Bell, Search, X, Check, User, Settings, LogOut } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Bell, Search, X, Check, User, Settings, LogOut, Calendar, ShieldCheck } from 'lucide-react';
+import useAuthStore from '../store/authStore';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const MOCK_NOTIFICATIONS = [
-    { id: 1, text: 'New exam "Data Structures" is now live.', time: '2m ago', read: false },
-    { id: 2, text: 'Your exam session was recorded.', time: '15m ago', read: false },
-    { id: 3, text: 'Admin approved your proctor report.', time: '1h ago', read: true },
+    { id: 1, text: 'Neural analysis for "Physics 101" complete.', time: '2m ago', read: false },
+    { id: 2, text: 'System security update deployed.', time: '15m ago', read: false },
+    { id: 3, text: 'Session report #842 validated.', time: '1h ago', read: true },
 ];
 
 export default function Navbar({ title = 'Dashboard' }) {
-    const { user, logout } = useAuth();
+    const { user, logout } = useAuthStore();
     const navigate = useNavigate();
 
     const [showNotifs, setShowNotifs] = useState(false);
@@ -22,7 +22,6 @@ export default function Navbar({ title = 'Dashboard' }) {
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
-    // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClick = (e) => {
             if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifs(false);
@@ -40,97 +39,107 @@ export default function Navbar({ title = 'Dashboard' }) {
     };
 
     const DROPDOWN_STYLE = {
-        position: 'absolute', top: 'calc(100% + 10px)', right: 0,
-        background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
-        boxShadow: '0 8px 30px rgba(0,0,0,0.12)', zIndex: 1000, minWidth: 280,
-        overflow: 'hidden',
+        position: 'absolute', top: 'calc(100% + 12px)', right: 0,
+        background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+        boxShadow: 'var(--shadow-xl)', zIndex: 1000, minWidth: 320,
+        overflow: 'hidden', animation: 'fade-up 0.2s ease-out'
     };
 
     return (
         <header style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginBottom: '2rem', paddingBottom: '1.25rem',
-            borderBottom: '1px solid #E2E8F0',
+            marginBottom: '2.5rem', paddingBottom: '1.25rem',
+            borderBottom: '1px solid var(--border)',
         }}>
-            {/* Title */}
+            {/* Title & Context */}
             <div>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1E293B', margin: 0, letterSpacing: '-0.01em' }}>
-                    {title}
-                </h1>
-                <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: '0.2rem 0 0' }}>
-                    {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <h1 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--n-900)', margin: 0, letterSpacing: '-0.03em' }}>
+                        {title}
+                    </h1>
+                    <div className="badge badge-info" style={{ fontSize: '0.65rem', padding: '2px 8px' }}>SECURE SESSION</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--n-400)', fontSize: '0.8rem', fontWeight: 600 }}>
+                    <Calendar size={14} />
+                    {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </div>
             </div>
 
-            {/* Right actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
-                {/* Search */}
+            {/* Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                {/* Global Search */}
                 <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                    <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
                     <input
                         className="input"
-                        placeholder="Search…"
-                        style={{ paddingLeft: '2rem', width: 200, fontSize: '0.82rem', padding: '0.5rem 0.75rem 0.5rem 2rem' }}
+                        placeholder="Search system..."
+                        style={{ paddingLeft: '2.75rem', width: 240, height: '2.5rem', fontSize: '0.875rem' }}
                     />
                 </div>
 
-                {/* Notification bell */}
+                {/* Notifications */}
                 <div ref={notifRef} style={{ position: 'relative' }}>
                     <button
                         onClick={() => { setShowNotifs(v => !v); setShowProfile(false); }}
                         style={{
-                            width: 36, height: 36, borderRadius: '50%', border: '1px solid #E2E8F0',
-                            background: showNotifs ? '#EFF6FF' : '#fff', cursor: 'pointer',
+                            width: 42, height: 42, borderRadius: 12, border: '1px solid var(--border)',
+                            background: showNotifs ? 'var(--brand-50)' : '#fff', cursor: 'pointer',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            position: 'relative', transition: 'all 0.15s',
+                            position: 'relative', transition: 'all 0.2s',
                         }}
                     >
-                        <Bell size={17} color={showNotifs ? '#3B82F6' : '#64748B'} />
+                        <Bell size={18} color={showNotifs ? 'var(--brand-600)' : 'var(--n-500)'} />
                         {unreadCount > 0 && (
                             <span style={{
-                                position: 'absolute', top: 5, right: 5,
-                                width: 8, height: 8, borderRadius: '50%',
-                                background: '#EF4444', border: '1.5px solid #fff',
-                            }} />
+                                position: 'absolute', top: -4, right: -4,
+                                minWidth: 18, height: 18, borderRadius: 9,
+                                background: 'var(--danger)', color: '#fff', fontSize: '0.65rem', fontWeight: 800,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                            }}>
+                                {unreadCount}
+                            </span>
                         )}
                     </button>
 
                     {showNotifs && (
                         <div style={DROPDOWN_STYLE}>
-                            <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#1E293B' }}>Notifications</span>
-                                <button onClick={markAllRead} style={{ fontSize: '0.72rem', color: '#3B82F6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                                    <Check size={11} style={{ marginRight: 3 }} />Mark all read
+                            <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--n-50)' }}>
+                                <span style={{ fontWeight: 800, fontSize: '0.875rem', color: 'var(--n-900)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Alerts</span>
+                                <button onClick={markAllRead} style={{ fontSize: '0.75rem', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <Check size={14} /> Clear All
                                 </button>
                             </div>
-                            {notifications.map(n => (
-                                <div key={n.id} style={{ padding: '0.85rem 1rem', borderBottom: '1px solid #F8FAFC', display: 'flex', gap: '0.6rem', background: n.read ? '#fff' : '#F8FAFF' }}>
-                                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: n.read ? '#CBD5E1' : '#3B82F6', flexShrink: 0, marginTop: 5 }} />
-                                    <div>
-                                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#334155', lineHeight: 1.5 }}>{n.text}</p>
-                                        <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>{n.time}</span>
+                            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                                {notifications.map(n => (
+                                    <div key={n.id} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--n-50)', display: 'flex', gap: '1rem', background: n.read ? '#fff' : 'var(--brand-50)', transition: 'background 0.2s' }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: n.read ? 'var(--n-200)' : 'var(--brand-500)', flexShrink: 0, marginTop: 6 }} />
+                                        <div>
+                                            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--n-800)', lineHeight: 1.5, fontWeight: n.read ? 400 : 600 }}>{n.text}</p>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--n-400)', marginTop: 4, display: 'block' }}>{n.time}</span>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                             {notifications.length === 0 && (
-                                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.82rem' }}>No notifications</div>
+                                <div style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--n-400)', fontSize: '0.875rem' }}>No active alerts</div>
                             )}
                         </div>
                     )}
                 </div>
 
-                {/* Profile avatar */}
+                {/* Profile Dropdown */}
                 <div ref={profileRef} style={{ position: 'relative' }}>
                     <button
                         onClick={() => { setShowProfile(v => !v); setShowNotifs(false); }}
                         style={{
-                            width: 36, height: 36, borderRadius: '50%', border: 'none',
-                            background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
+                            width: 42, height: 42, borderRadius: 12, border: 'none',
+                            background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '0.875rem', fontWeight: 700, color: '#fff',
+                            fontSize: '0.9rem', fontWeight: 800, color: '#fff',
                             cursor: 'pointer', flexShrink: 0,
-                            outline: showProfile ? '2px solid #3B82F6' : 'none',
-                            outlineOffset: 2,
+                            boxShadow: showProfile ? '0 0 0 3px var(--brand-100)' : 'var(--shadow-sm)',
+                            transition: 'all 0.2s',
                         }}
                     >
                         {user?.name?.[0]?.toUpperCase()}
@@ -138,33 +147,32 @@ export default function Navbar({ title = 'Dashboard' }) {
 
                     {showProfile && (
                         <div style={DROPDOWN_STYLE}>
-                            {/* User info */}
-                            <div style={{ padding: '1rem', borderBottom: '1px solid #F1F5F9', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                                <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#fff', fontSize: '1rem', flexShrink: 0 }}>
+                            <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', gap: '1rem', alignItems: 'center', background: 'var(--n-50)' }}>
+                                <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '1.1rem', flexShrink: 0 }}>
                                     {user?.name?.[0]?.toUpperCase()}
                                 </div>
                                 <div>
-                                    <p style={{ margin: 0, fontWeight: 700, fontSize: '0.875rem', color: '#1E293B' }}>{user?.name}</p>
-                                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748B' }}>{user?.email}</p>
-                                    <span style={{ fontSize: '0.65rem', fontWeight: 700, background: '#DBEAFE', color: '#1D4ED8', padding: '1px 7px', borderRadius: 99 }}>{user?.role?.toUpperCase()}</span>
+                                    <p style={{ margin: 0, fontWeight: 800, fontSize: '1rem', color: 'var(--n-900)', letterSpacing: '-0.02em' }}>{user?.name}</p>
+                                    <p style={{ margin: '2px 0', fontSize: '0.75rem', color: 'var(--n-500)' }}>{user?.email}</p>
+                                    <div className="badge badge-info" style={{ fontSize: '0.6rem', marginTop: 4 }}>{user?.role?.toUpperCase()} ACCESS</div>
                                 </div>
                             </div>
-                            {/* Menu items */}
-                            <button onClick={() => setShowProfile(false)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: '#334155', textAlign: 'left' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                                <User size={15} color="#64748B" /> Profile
-                            </button>
-                            <button onClick={() => setShowProfile(false)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: '#334155', textAlign: 'left' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                                <Settings size={15} color="#64748B" /> Settings
-                            </button>
-                            <div style={{ borderTop: '1px solid #F1F5F9' }}>
-                                <button onClick={handleLogout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: '#EF4444', textAlign: 'left', transition: 'background 0.1s' }}
-                                    onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
+                            <div style={{ padding: '0.5rem' }}>
+                                <button onClick={() => setShowProfile(false)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--n-700)', textAlign: 'left', borderRadius: 8, transition: 'background 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--n-50)'}
                                     onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                                    <LogOut size={15} /> Sign Out
+                                    <User size={16} color="var(--n-400)" /> Account Settings
+                                </button>
+                                <button onClick={() => setShowProfile(false)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--n-700)', textAlign: 'left', borderRadius: 8, transition: 'background 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--n-50)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                    <ShieldCheck size={16} color="var(--n-400)" /> Security Log
+                                </button>
+                                <div style={{ margin: '4px 0', borderTop: '1px solid var(--border)' }} />
+                                <button onClick={handleLogout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--danger)', fontWeight: 700, textAlign: 'left', borderRadius: 8, transition: 'all 0.2s' }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--danger-bg)'; e.currentTarget.style.color = 'var(--danger)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--danger)'; }}>
+                                    <LogOut size={16} /> Terminate Session
                                 </button>
                             </div>
                         </div>

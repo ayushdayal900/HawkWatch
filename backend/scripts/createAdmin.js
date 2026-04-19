@@ -13,6 +13,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User     = require('../models/User');
+const config   = require('../config');
 
 const ADMIN = {
     name:     'HawkWatch Admin',
@@ -22,7 +23,7 @@ const ADMIN = {
 };
 
 async function main() {
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(config.database.url);
     console.log('✅  Connected to MongoDB');
 
     const existing = await User.findOne({ email: ADMIN.email });

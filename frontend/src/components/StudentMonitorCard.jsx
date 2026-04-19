@@ -1,75 +1,139 @@
 import { useEffect, useState } from 'react';
-import { Activity, ShieldAlert, FileText } from 'lucide-react';
+import { Activity, ShieldAlert, Clock, ChevronRight } from 'lucide-react';
 
-export default function StudentMonitorCard({ session, student, riskScore, flagCount, lastFlag, onExpand }) {
+function getRiskConfig(score) {
+    if (score >= 75) return { color: '#EF4444', bg: '#FEF2F2', label: 'Critical', cls: 'risk-critical' };
+    if (score >= 50) return { color: '#F97316', bg: '#FFF7ED', label: 'High',     cls: 'risk-high' };
+    if (score >= 25) return { color: '#F59E0B', bg: '#FFFBEB', label: 'Medium',   cls: 'risk-medium' };
+    return            { color: '#10B981', bg: '#ECFDF5', label: 'Low',      cls: 'risk-low' };
+}
+
+export default function StudentMonitorCard({ session, student, riskScore = 0, flagCount = 0, lastFlag, onExpand }) {
     const [pulse, setPulse] = useState(false);
+    const risk = getRiskConfig(riskScore);
 
     useEffect(() => {
         if (lastFlag) {
             setPulse(true);
-            const timer = setTimeout(() => setPulse(false), 2000);
-            return () => clearTimeout(timer);
+            const t = setTimeout(() => setPulse(false), 2500);
+            return () => clearTimeout(t);
         }
     }, [lastFlag]);
 
-    const rc = riskScore >= 75 ? '#DC2626' : riskScore >= 50 ? '#D97706' : riskScore >= 25 ? '#F59E0B' : '#10B981';
+    const name = student?.name || 'Unknown Student';
+    const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const examTitle = session?.exam?.title || 'Exam Session';
+    const elapsed = session?.startTimestamp
+        ? Math.floor((Date.now() - new Date(session.startTimestamp)) / 60000) + 'm'
+        : null;
 
     return (
-        <div 
+        <div
+            className={`monitor-card ${pulse ? 'flagging' : ''}`}
             onClick={() => onExpand(session)}
-            style={{
-                background: '#fff',
-                border: `1px solid ${pulse ? '#EF4444' : '#E2E8F0'}`,
-                borderRadius: 12,
-                padding: '1.25rem',
-                cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                boxShadow: pulse ? '0 0 0 4px rgba(239, 68, 68, 0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1rem',
-                transform: pulse ? 'scale(1.02)' : 'scale(1)'
-            }}
         >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            {/* Risk bar at top */}
+            <div
+                className="risk-bar"
+                style={{ background: risk.color, opacity: riskScore > 0 ? 0.9 : 0.2, width: `${Math.min(riskScore, 100)}%` }}
+            />
+
+            {/* Header row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#F1F5F9', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-                        {student?.avatar ? (
-                            <img src={student.avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: 700 }}>
-                                {student?.name?.charAt(0).toUpperCase()}
-                            </div>
-                        )}
+                    {/* Avatar */}
+                    <div style={{
+                        width: 42, height: 42, borderRadius: '50%',
+                        background: `linear-gradient(135deg, ${risk.color}22, ${risk.color}44)`,
+                        border: `2px solid ${risk.color}44`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.82rem', fontWeight: 700, color: risk.color,
+                        flexShrink: 0,
+                    }}>
+                        {student?.avatar
+                            ? <img src={student.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                            : initials
+                        }
                     </div>
-                    <div>
-                        <h4 style={{ margin: 0, color: '#1E293B', fontSize: '0.95rem', fontWeight: 600 }}>{student?.name || 'Unknown'}</h4>
-                        <div style={{ color: '#64748B', fontSize: '0.75rem', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                           <FileText size={10} /> {session.exam?.title || 'Exam Session'}
+
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1E293B', lineHeight: 1.2 }}>{name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {examTitle}
                         </div>
                     </div>
                 </div>
-                
-                <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Risk</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: rc, lineHeight: 1 }}>{Math.round(riskScore)}<span style={{ fontSize: '0.8rem' }}>/100</span></div>
+
+                {/* Risk score */}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94A3B8' }}>Risk</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, lineHeight: 1, color: risk.color, letterSpacing: '-0.03em' }}>
+                        {Math.round(riskScore)}
+                        <span style={{ fontSize: '0.7rem', fontWeight: 600, opacity: 0.7 }}>/100</span>
+                    </div>
                 </div>
             </div>
 
-            <div style={{ background: '#F8FAFC', padding: '0.75rem', borderRadius: 8, display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748B', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}><ShieldAlert size={12} /> Total Flags</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#334155' }}>{flagCount}</div>
+            {/* Risk progress bar */}
+            <div className="risk-meter" style={{ marginBottom: '0.875rem' }}>
+                <div
+                    className="risk-meter-fill"
+                    style={{ width: `${Math.min(riskScore, 100)}%`, background: risk.color }}
+                />
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{
+                    flex: 1, padding: '0.625rem 0.75rem',
+                    background: '#F8FAFC', borderRadius: 8,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                    <ShieldAlert size={13} color={flagCount > 0 ? '#F97316' : '#94A3B8'} />
+                    <div>
+                        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Flags</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, color: flagCount > 0 ? '#F97316' : '#1E293B', lineHeight: 1 }}>{flagCount}</div>
+                    </div>
                 </div>
-                {lastFlag && (
-                    <div style={{ flex: 2, borderLeft: '1px solid #E2E8F0', paddingLeft: '1rem' }}>
-                        <div style={{ fontSize: '0.65rem', color: '#64748B', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}><Activity size={12} /> Latest Event</div>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: lastFlag.severity === 'critical' ? '#DC2626' : '#D97706', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {lastFlag.type.replace(/_/g, ' ')}
+
+                {lastFlag ? (
+                    <div style={{
+                        flex: 2, padding: '0.625rem 0.75rem',
+                        background: pulse ? '#FEF2F2' : '#F8FAFC',
+                        borderRadius: 8, transition: 'background 0.3s',
+                        border: pulse ? '1px solid #FECACA' : '1px solid transparent',
+                        overflow: 'hidden',
+                    }}>
+                        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Activity size={10} /> Latest
                         </div>
-                        <div style={{ fontSize: '0.65rem', color: '#94A3B8', marginTop: 2 }}>{new Date(lastFlag.timestamp).toLocaleTimeString()}</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: lastFlag.severity === 'critical' ? '#DC2626' : '#D97706', marginTop: 2, textTransform: 'capitalize' }}>
+                            {String(lastFlag.type || '').replace(/_/g, ' ')}
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{
+                        flex: 2, padding: '0.625rem 0.75rem',
+                        background: '#F0FDF4', borderRadius: 8,
+                        display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
+                        <Activity size={13} color="#10B981" />
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#065F46' }}>All Clear</div>
                     </div>
                 )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.75rem' }}>
+                {elapsed && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', color: '#94A3B8' }}>
+                        <Clock size={11} />
+                        {elapsed} elapsed
+                    </div>
+                )}
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', color: '#3B82F6', fontWeight: 600 }}>
+                    Inspect <ChevronRight size={12} />
+                </div>
             </div>
         </div>
     );

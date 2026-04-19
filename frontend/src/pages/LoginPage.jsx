@@ -1,66 +1,61 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import useAuthStore from '../store/authStore';
 import {
     Eye, EyeOff, ShieldCheck,
     Brain, Fingerprint, Eye as EyeAI,
-    AlertCircle, Loader2,
+    AlertCircle, Loader2, Zap, Shield
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-/* Role → redirect mapping */
 const ROLE_REDIRECT = {
     admin:    '/dashboard',
     examiner: '/dashboard',
     student:  '/dashboard',
 };
 
-/* Feature highlights shown in the left panel */
 const FEATURES = [
     {
         icon: EyeAI,
-        title: 'MediaPipe Face Mesh',
-        desc:  '468-landmark real-time tracking',
-        color: '#3B82F6',
+        title: 'Neural Vision Core',
+        desc:  '468-landmark biometric triangulation',
+        color: 'var(--brand-400)',
     },
     {
         icon: Brain,
-        title: 'Deepfake Detection',
-        desc:  'EfficientNet — FaceForensics++',
-        color: '#6366F1',
+        title: 'Deepfake Defense',
+        desc:  'Real-time synthesis detection engine',
+        color: '#8B5CF6',
     },
     {
         icon: Fingerprint,
-        title: 'Behavioral Biometrics',
-        desc:  'Typing rhythm & mouse dynamics',
-        color: '#22C55E',
+        title: 'Behavioral DNA',
+        desc:  'Advanced rhythm & pattern analysis',
+        color: 'var(--success)',
     },
 ];
 
 export default function LoginPage() {
-    const { login }    = useAuth();
+    const login = useAuthStore(state => state.login);
     const navigate     = useNavigate();
     const location     = useLocation();
 
     const [form,    setForm]    = useState({ email: '', password: '' });
     const [showPwd, setShowPwd] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [errors,  setErrors]  = useState({});   // field-level validation
+    const [errors,  setErrors]  = useState({});
 
-    /* ── After login, go back to the page they tried to visit first ── */
     const from = location.state?.from?.pathname || null;
 
-    /* ── Client-side validation ────────────────────────────────────── */
     const validate = () => {
         const e = {};
-        if (!form.email)    e.email    = 'Email is required.';
-        else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email.';
-        if (!form.password) e.password = 'Password is required.';
+        if (!form.email) e.email = 'Required';
+        else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid format';
+        if (!form.password) e.password = 'Required';
         setErrors(e);
         return Object.keys(e).length === 0;
     };
 
-    /* ── Submit ────────────────────────────────────────────────────── */
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validate()) return;
@@ -71,22 +66,13 @@ export default function LoginPage() {
             toast.success(`Welcome back, ${user.name.split(' ')[0]}! 👋`);
             navigate(from ?? ROLE_REDIRECT[user.role] ?? '/dashboard', { replace: true });
         } catch (err) {
-            const msg  = err.response?.data?.message || 'Login failed. Please try again.';
-            const code = err.response?.data?.code;
-
-            if (code === 'INVALID_CREDENTIALS') {
-                setErrors({ password: 'Incorrect email or password.' });
-            } else if (code === 'ACCOUNT_DEACTIVATED') {
-                toast.error(msg, { duration: 5000 });
-            } else {
-                toast.error(msg);
-            }
+            const msg  = err.response?.data?.message || 'Login failed.';
+            toast.error(msg);
         } finally {
             setLoading(false);
         }
     };
 
-    /* ── Helpers ───────────────────────────────────────────────────── */
     const field = (key) => ({
         value:    form[key],
         onChange: (e) => {
@@ -96,218 +82,182 @@ export default function LoginPage() {
     });
 
     return (
-        <div style={{ minHeight: '100vh', display: 'flex', background: '#F8FAFC' }}>
+        <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
 
-            {/* ── Left brand panel ─────────────────────────────────── */}
+            {/* ── Left Panel: Brand Experience ───────────────────────── */}
             <div style={{
-                width: '44%', flexShrink: 0,
-                background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #1e3a5f 100%)',
+                width: '45%', flexShrink: 0,
+                background: 'linear-gradient(165deg, #020617 0%, #0f172a 50%, #1e1b4b 100%)',
                 display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                padding: '3rem 2.5rem',
+                padding: '4rem 3.5rem',
+                position: 'relative',
+                overflow: 'hidden',
+                color: '#fff'
             }}>
-                <div style={{ maxWidth: 340, width: '100%' }}>
+                {/* Abstract Background Shapes */}
+                <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, var(--brand-500) 0%, transparent 70%)', opacity: 0.1, filter: 'blur(80px)' }} />
+                <div style={{ position: 'absolute', bottom: '-20%', left: '-10%', width: '80%', height: '80%', background: 'radial-gradient(circle, #4f46e5 0%, transparent 70%)', opacity: 0.1, filter: 'blur(80px)' }} />
 
+                <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
                     {/* Logo */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '3rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '5rem' }}>
                         <div style={{
-                            width: 44, height: 44, borderRadius: 12,
-                            background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
+                            width: 48, height: 48, borderRadius: 14,
+                            background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            boxShadow: '0 4px 16px rgba(59,130,246,0.4)',
+                            boxShadow: '0 8px 24px rgba(59,130,246,0.3)',
                         }}>
-                            <ShieldCheck size={24} color="#fff" />
+                            <ShieldCheck size={28} color="#fff" />
                         </div>
-                        <span style={{ fontWeight: 800, fontSize: '1.3rem', color: '#F8FAFC', letterSpacing: '-0.01em' }}>
-                            HawkWatch
+                        <span style={{ fontWeight: 900, fontSize: '1.5rem', letterSpacing: '-0.03em' }}>
+                            HawkWatch<span style={{ color: 'var(--brand-400)' }}>.</span>
                         </span>
                     </div>
 
                     {/* Headline */}
-                    <h2 style={{
-                        color: '#F1F5F9', fontSize: '1.85rem', fontWeight: 700,
-                        margin: '0 0 0.85rem', lineHeight: 1.25, letterSpacing: '-0.02em',
-                    }}>
-                        AI-Powered<br/>Secure Examinations
-                    </h2>
-                    <p style={{ color: '#94A3B8', fontSize: '0.88rem', lineHeight: 1.7, margin: '0 0 2.5rem' }}>
-                        Multimodal proctoring that detects cheating in real time — without compromising the candidate experience.
-                    </p>
-
-                    {/* Feature list */}
-                    {/* eslint-disable-next-line no-unused-vars */}
-                    {FEATURES.map(({ icon: Icon, title, desc, color }) => (
-                        <div key={title} style={{
-                            display: 'flex', alignItems: 'center', gap: '0.9rem',
-                            marginBottom: '1.1rem',
+                    <div style={{ flex: 1 }}>
+                        <h1 style={{
+                            fontSize: '3.5rem', fontWeight: 900,
+                            lineHeight: 1, letterSpacing: '-0.04em',
+                            margin: '0 0 1.5rem',
+                            background: 'linear-gradient(to bottom right, #fff 40%, rgba(255,255,255,0.6) 100%)',
+                            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
                         }}>
-                            <div style={{
-                                width: 34, height: 34, borderRadius: 9, flexShrink: 0,
-                                background: `${color}22`,
-                                border: `1px solid ${color}44`,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                                <Icon size={16} color={color} />
+                            Precision<br/>Monitoring<br/>at Scale.
+                        </h1>
+                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '1.1rem', lineHeight: 1.6, maxWidth: '420px', margin: '0 0 4rem' }}>
+                            Experience the future of academic integrity with our multimodal AI proctoring suite.
+                        </p>
+
+                        {/* Features */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                            {FEATURES.map((f) => (
+                                <div key={f.title} style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start' }}>
+                                    <div style={{ 
+                                        width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+                                        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        <f.icon size={20} color={f.color} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 4 }}>{f.title}</div>
+                                        <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.4)' }}>{f.desc}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{ paddingTop: '3rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <div className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', border: 'none' }}>
+                                <Zap size={10} style={{ marginRight: 4 }} /> v4.2 Stable
                             </div>
-                            <div>
-                                <div style={{ color: '#E2E8F0', fontSize: '0.82rem', fontWeight: 600 }}>{title}</div>
-                                <div style={{ color: '#64748B', fontSize: '0.74rem', marginTop: 1 }}>{desc}</div>
+                            <div className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.6)', border: 'none' }}>
+                                <Shield size={10} style={{ marginRight: 4 }} /> ISO 27001
                             </div>
                         </div>
-                    ))}
-
-                    {/* Trust badge */}
-                    <div style={{
-                        marginTop: '2.5rem', padding: '0.65rem 1rem',
-                        background: 'rgba(59,130,246,0.08)',
-                        border: '1px solid rgba(59,130,246,0.2)',
-                        borderRadius: 10,
-                        display: 'flex', alignItems: 'center', gap: '0.6rem',
-                    }}>
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
-                        <span style={{ color: '#94A3B8', fontSize: '0.75rem' }}>
-                            All sessions are monitored &amp; encrypted at rest.
-                        </span>
+                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>
+                            &copy; 2026 HawkWatch AI
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* ── Right form panel ──────────────────────────────────── */}
+            {/* ── Right Panel: Login Form ───────────────────────────── */}
             <div style={{
                 flex: 1, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', padding: '2.5rem 2rem',
+                justifyContent: 'center', padding: '2rem'
             }}>
-                <div style={{ width: '100%', maxWidth: 400 }}>
+                <div style={{ width: '100%', maxWidth: 420 }}>
+                    <div style={{ marginBottom: '2.5rem' }}>
+                        <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--n-900)', letterSpacing: '-0.02em', margin: '0 0 0.5rem' }}>
+                            Access Dashboard
+                        </h2>
+                        <p style={{ color: 'var(--n-500)', fontSize: '0.95rem' }}>
+                            Securely sign in to your HawkWatch profile.
+                        </p>
+                    </div>
 
-                    {/* Header */}
-                    <div style={{ marginBottom: '2rem' }}>
-                        <h1 style={{
-                            fontWeight: 700, fontSize: '1.6rem',
-                            color: '#0F172A', margin: '0 0 0.4rem',
-                            letterSpacing: '-0.015em',
-                        }}>
-                            Sign in to your account
-                        </h1>
-                        <p style={{ color: '#64748B', fontSize: '0.85rem', margin: 0 }}>
-                            Don&apos;t have an account?{' '}
-                            <Link to="/register" style={{ color: '#3B82F6', fontWeight: 600, textDecoration: 'none' }}>
-                                Get started
+                    <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <label style={{ fontSize: '0.81rem', fontWeight: 700, color: 'var(--n-700)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Email Address
+                                </label>
+                                {errors.email && <span style={{ color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 600 }}>{errors.email}</span>}
+                            </div>
+                            <input
+                                className="input"
+                                type="email"
+                                placeholder="name@organization.com"
+                                style={{ height: '3rem', ...(errors.email ? { borderColor: 'var(--danger)', background: 'var(--danger-bg)' } : {}) }}
+                                {...field('email')}
+                            />
+                        </div>
+
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <label style={{ fontSize: '0.81rem', fontWeight: 700, color: 'var(--n-700)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Security Key
+                                </label>
+                                {errors.password && <span style={{ color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 600 }}>{errors.password}</span>}
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    className="input"
+                                    type={showPwd ? 'text' : 'password'}
+                                    placeholder="••••••••••••"
+                                    style={{ height: '3rem', paddingRight: '3rem', ...(errors.password ? { borderColor: 'var(--danger)', background: 'var(--danger-bg)' } : {}) }}
+                                    {...field('password')}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPwd(!showPwd)}
+                                    style={{ 
+                                        position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                                        background: 'none', border: 'none', color: 'var(--n-400)', cursor: 'pointer', padding: 4
+                                    }}
+                                >
+                                    {showPwd ? <EyeOff size={20} /> : <Eye size={20} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <Link to="/forgot-password" style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--brand-600)', textDecoration: 'none' }}>
+                                Troubleshoot access?
+                            </Link>
+                        </div>
+
+                        <button
+                            className="btn btn-primary btn-lg"
+                            type="submit"
+                            disabled={loading}
+                            style={{ height: '3.25rem', justifyContent: 'center', fontSize: '1rem', fontWeight: 700 }}
+                        >
+                            {loading ? <Loader2 size={20} className="animate-spin" /> : 'Enter Dashboard'}
+                        </button>
+                    </form>
+
+                    <div style={{ marginTop: '2.5rem', textAlign: 'center' }}>
+                        <p style={{ color: 'var(--n-500)', fontSize: '0.9rem' }}>
+                            New to the platform?{' '}
+                            <Link to="/register" style={{ color: 'var(--brand-600)', fontWeight: 700, textDecoration: 'none' }}>
+                                Create an account
                             </Link>
                         </p>
                     </div>
 
-                    {/* Form */}
-                    <form id="login-form" onSubmit={handleSubmit} noValidate
-                        style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-                        {/* Email */}
-                        <div>
-                            <label style={labelStyle}>Email address</label>
-                            <input
-                                id="login-email"
-                                className="input"
-                                type="email"
-                                placeholder="you@example.com"
-                                autoComplete="email"
-                                style={errors.email ? inputErrorStyle : {}}
-                                {...field('email')}
-                                required
-                            />
-                            {errors.email && <FieldError msg={errors.email} />}
-                        </div>
-
-                        {/* Password */}
-                        <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                <label style={labelStyle}>Password</label>
-                                {/* Forgot password placeholder */}
-                                <span style={{ fontSize: '0.78rem', color: '#3B82F6', fontWeight: 500, cursor: 'pointer' }}>
-                                    Forgot password?
-                                </span>
-                            </div>
-                            <div style={{ position: 'relative' }}>
-                                <input
-                                    id="login-password"
-                                    className="input"
-                                    type={showPwd ? 'text' : 'password'}
-                                    placeholder="••••••••"
-                                    autoComplete="current-password"
-                                    style={{ paddingRight: '2.75rem', ...(errors.password ? inputErrorStyle : {}) }}
-                                    {...field('password')}
-                                    required
-                                />
-                                <button
-                                    type="button"
-                                    id="toggle-password"
-                                    onClick={() => setShowPwd(!showPwd)}
-                                    style={eyeBtnStyle}
-                                    aria-label={showPwd ? 'Hide password' : 'Show password'}
-                                >
-                                    {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
-                                </button>
-                            </div>
-                            {errors.password && <FieldError msg={errors.password} />}
-                        </div>
-
-                        {/* Submit */}
-                        <button
-                            id="login-submit"
-                            className="btn-primary"
-                            type="submit"
-                            disabled={loading}
-                            style={{ width: '100%', justifyContent: 'center', padding: '0.8rem', marginTop: '0.25rem', fontSize: '0.95rem' }}
-                        >
-                            {loading
-                                ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Signing in…</>
-                                : 'Sign In'}
-                        </button>
-                    </form>
-
-                    {/* Divider */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '1.75rem 0' }}>
-                        <div style={{ flex: 1, height: 1, background: '#E2E8F0' }} />
-                        <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>protected by</span>
-                        <div style={{ flex: 1, height: 1, background: '#E2E8F0' }} />
-                    </div>
-                    <div style={{ textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
-                        <ShieldCheck size={14} color="#3B82F6" />
-                        <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>HawkWatch AI Proctoring</span>
+                    <div style={{ marginTop: '4rem', display: 'flex', alignItems: 'center', gap: '1rem', opacity: 0.4 }}>
+                        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                        <ShieldCheck size={16} />
+                        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                     </div>
                 </div>
             </div>
-
-            {/* Inline keyframe for spinner */}
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
     );
 }
-
-/* ── Sub-components ─────────────────────────────────────────────────── */
-function FieldError({ msg }) {
-    return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: 5 }}>
-            <AlertCircle size={13} color="#EF4444" />
-            <span style={{ fontSize: '0.77rem', color: '#EF4444' }}>{msg}</span>
-        </div>
-    );
-}
-
-/* ── Shared inline styles ───────────────────────────────────────────── */
-const labelStyle = {
-    display: 'block', fontSize: '0.82rem',
-    fontWeight: 600, color: '#374151', marginBottom: 6,
-};
-
-const inputErrorStyle = {
-    borderColor: '#EF4444',
-    boxShadow: '0 0 0 3px rgba(239,68,68,0.12)',
-};
-
-const eyeBtnStyle = {
-    position: 'absolute', right: 10, top: '50%',
-    transform: 'translateY(-50%)',
-    background: 'none', border: 'none',
-    cursor: 'pointer', color: '#94A3B8',
-    display: 'flex', alignItems: 'center',
-    padding: 0,
-};

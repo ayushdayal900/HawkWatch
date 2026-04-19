@@ -18,19 +18,20 @@
  */
 
 const AWS = require('aws-sdk');
+const config = require('../config');
 
 /* ── SDK config ─────────────────────────────────────────────────── */
 AWS.config.update({
-    accessKeyId:     process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region:          process.env.AWS_REGION || 'us-east-1',
+    accessKeyId:     config.aws.accessKeyId,
+    secretAccessKey: config.aws.secretAccessKey,
+    region:          config.aws.region || 'us-east-1',
 });
 
 const rekognition = new AWS.Rekognition();
 const s3          = new AWS.S3();
 
 const SIMILARITY_THRESHOLD = parseFloat(
-    process.env.REKOGNITION_SIMILARITY_THRESHOLD || '80'
+    config.aws.similarityThreshold || '80'
 );
 
 /* ── Helpers ────────────────────────────────────────────────────── */
@@ -60,7 +61,7 @@ function base64ToBytes(dataUrlOrB64) {
  * @returns {{ verified: boolean, confidence: number, rawText: string[], message: string }}
  */
 async function verifyIDCard(imageB64) {
-    if (process.env.USE_REKOGNITION !== 'true') return { verified: true, confidence: 100, rawText: [], message: 'Stub: ID verified correctly.' };
+    if (config.aws.useRekognition !== true && config.aws.useRekognition !== 'true') return { verified: true, confidence: 100, rawText: [], message: 'Stub: ID verified correctly.' };
 
     if (!imageB64 || imageB64.length < 100) {
         return { verified: false, confidence: 0, rawText: [], message: 'Image too small or empty.' };
@@ -277,7 +278,7 @@ async function detectFaceLiveness(imageB64) {
  * @returns {string|null}     S3 key or null
  */
 async function uploadImageToS3(imageB64, key) {
-    const bucket = process.env.AWS_S3_BUCKET;
+    const bucket = config.aws.bucket;
     if (!bucket || bucket === 'hawkwatch-proctoring-media') {
         console.info('[s3] No S3 bucket configured — skipping upload.');
         return null;

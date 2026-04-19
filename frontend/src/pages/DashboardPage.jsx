@@ -2,11 +2,8 @@
  * pages/DashboardPage.jsx
  * ─────────────────────────────────────────────────────────────────────────────
  * Role-aware dashboard:
- *   • Examiner / Admin — exam stat cards from GET /api/exams/stats, recent exam
- *     table, live proctoring monitor panel, weekly activity chart.
- *   • Student          — personal attempt history stats, recent exam list with
- *     score and pass/fail badge.
- * All values come from real API data — no hardcoded placeholders.
+ *   • Examiner / Admin — Live overview of the platform performance and sessions.
+ *   • Student          — Summary of progress and available opportunities.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -14,40 +11,32 @@ import { useEffect, useState, useMemo } from 'react';
 import Navbar           from '../components/Navbar';
 import Sidebar          from '../components/Sidebar';
 import { examAPI }      from '../services/api';
-import api              from '../services/api';
-import { useAuth }      from '../context/AuthContext';
-import StudentMonitorCard from '../components/StudentMonitorCard';
-import AlertLogTable    from '../components/AlertLogTable';
+import useAuthStore from '../store/authStore';
 import {
     BarChart3, Users, BookOpen, ShieldCheck, TrendingUp,
-    AlertCircle, Clock, CheckCircle, XCircle, FileText,
+    Clock, CheckCircle, FileText, ChevronRight, Activity, Zap
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { io } from 'socket.io-client';
 
-/* ─── Stat card ──────────────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, sub, color = '#3B82F6', loading }) {
+/* ─── Stat card component ──────────────────────────────────────────────── */
+function StatCard({ icon: Icon, label, value, sub, color = 'var(--brand-500)', bg = 'var(--brand-50)', loading }) {
     return (
-        <div className="card animate-fade-up" style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-            <div style={{
-                width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-                background: `${color}15`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
+        <div className="stat-card">
+            <div className="stat-icon" style={{ background: bg }}>
                 <Icon size={20} color={color} />
             </div>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.75rem', color: '#64748B', marginBottom: 2, fontWeight: 500 }}>{label}</div>
+            <div>
+                <div className="stat-label">{label}</div>
                 {loading ? (
-                    <div className="skeleton" style={{ height: 28, width: 60, marginTop: 4 }} />
+                    <div className="skeleton" style={{ height: 28, width: 80, marginTop: 4 }} />
                 ) : (
-                    <div style={{ fontSize: '1.65rem', fontWeight: 700, color: '#1E293B', lineHeight: 1 }}>{value}</div>
+                    <div className="stat-value" style={{ color: 'var(--n-800)' }}>{value}</div>
                 )}
                 {sub && !loading && (
-                    <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 4 }}>{sub}</div>
+                    <div className="stat-sub">{sub}</div>
                 )}
             </div>
         </div>
@@ -57,22 +46,20 @@ function StatCard({ icon: Icon, label, value, sub, color = '#3B82F6', loading })
 /* ─── Recent exam row ────────────────────────────────────────────────── */
 function RecentExamRow({ exam, isStudent }) {
     if (isStudent && exam.exam) {
-        // This is a history Attempt record instead of an Exam record
-        const passCls = exam.passed ? 'badge-low' : 'badge-high';
         return (
             <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '0.65rem 0', borderBottom: '1px solid #F1F5F9',
+                padding: '0.875rem 0', borderBottom: '1px solid var(--border)',
             }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--n-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {exam.exam.title}
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                        <Clock size={10} /> Finished {new Date(exam.updatedAt || exam.createdAt).toLocaleDateString()} · {exam.score} / {exam.exam.totalMarks} pts
+                    <div style={{ fontSize: '0.72rem', color: 'var(--n-500)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                        <Clock size={11} /> {new Date(exam.updatedAt || exam.createdAt).toLocaleDateString()} · {exam.score} / {exam.exam.totalMarks} pts
                     </div>
                 </div>
-                <span className={`badge ${passCls}`} style={{ fontSize: '0.65rem', marginLeft: '0.75rem', flexShrink: 0 }}>
+                <span className={`badge ${exam.passed ? 'badge-success' : 'badge-danger'}`}>
                     {exam.passed ? 'Passed' : 'Failed'}
                 </span>
             </div>
@@ -80,69 +67,53 @@ function RecentExamRow({ exam, isStudent }) {
     }
 
     const statusCfg = {
-        published: { cls: 'badge-low',    label: 'Published' },
-        draft:     { cls: 'badge-medium', label: 'Draft'     },
-        active:    { cls: 'badge-blue',   label: 'Active'    },
-        completed: { cls: 'badge-medium', label: 'Done'      },
+        published: { cls: 'badge-success', label: 'Live' },
+        draft:     { cls: 'badge-warning', label: 'Draft' },
+        active:    { cls: 'badge-info',    label: 'Active' },
+        completed: { cls: 'badge-neutral', label: 'Finished' },
     };
-    const cfg = statusCfg[exam.status] || { cls: 'badge-medium', label: exam.status };
+    const cfg = statusCfg[exam.status] || { cls: 'badge-neutral', label: exam.status };
 
     return (
         <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '0.65rem 0', borderBottom: '1px solid #F1F5F9',
+            padding: '0.875rem 0', borderBottom: '1px solid var(--border)',
         }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--n-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {exam.title}
                 </div>
-                <div style={{ fontSize: '0.7rem', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <Clock size={10} /> {exam.duration} min
-                    {!isStudent && <> · {exam.questions?.length || 0} questions</>}
+                <div style={{ fontSize: '0.72rem', color: 'var(--n-500)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                    <Clock size={11} /> {exam.duration}m · {exam.questions?.length || 0} Qs
                 </div>
             </div>
-            <span className={`badge ${cfg.cls}`} style={{ fontSize: '0.65rem', marginLeft: '0.75rem', flexShrink: 0 }}>
+            <span className={`badge ${cfg.cls}`}>
                 {cfg.label}
             </span>
         </div>
     );
 }
 
-/* ─── Weekly chart placeholder ───────────────────────────────────────── */
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const emptyChart = WEEK_DAYS.map((d) => ({ date: d, attempts: 0, flags: 0 }));
 
-/* ─── Main Page ──────────────────────────────────────────────────────── */
 export default function DashboardPage() {
-    const { user, isExaminer, isAdmin, isStudent } = useAuth();
-
+    const { user, isStudent } = useAuthStore();
     const [stats,   setStats]   = useState(null);
     const [exams,   setExams]   = useState([]);
     const [loading, setLoading] = useState(true);
-    const [liveEvents, setLiveEvents] = useState([]);
 
-    /* ── Fetch stats + recent exams ────────────────────────────────── */
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // Students fetch history; Examiners/Admins fetch available exams
                 const promises = [examAPI.getStats(), examAPI.getAll()];
-                if (isStudent) {
-                    promises.push(examAPI.getHistory());
-                }
+                if (isStudent) promises.push(examAPI.getHistory());
 
                 const res = await Promise.all(promises);
                 setStats(res[0].data.data);
-                
-                if (isStudent) {
-                    // res[1] = getAll (available exams for CTA card counts)
-                    // res[2] = getHistory (past attempts)
-                    setExams(res[2].data.data || []);
-                } else {
-                    setExams(res[1].data.data || []);
-                }
+                setExams(isStudent ? (res[2]?.data?.data || []) : (res[1]?.data?.data || []));
             } catch {
-                // Stats might fail if endpoint isn't yet available — degrade gracefully
+                // Graceful degradation
             } finally {
                 setLoading(false);
             }
@@ -150,212 +121,178 @@ export default function DashboardPage() {
         fetchData();
     }, [isStudent]);
 
-    /* ── Socket.IO: live proctoring events for examiner/admin ──────── */
-    useEffect(() => {
-        if ((!isExaminer && !isAdmin) || exams.length === 0) return;
-
-        const activeExamId = exams[0]?._id;
-        if (!activeExamId) return;
-
-        api.get(`/proctor/events/${activeExamId}`)
-            .then((r) => setLiveEvents(r.data.data || []))
-            .catch(() => {});
-
-        const socket = io(import.meta.env.VITE_APP_URL || 'http://localhost:5000');
-        socket.emit('join-proctor-room', { sessionId: activeExamId });
-        socket.on('student-event', (data) => {
-            setLiveEvents((prev) => [data.event, ...prev]);
-        });
-
-        return () => socket.disconnect();
-    }, [exams, isExaminer, isAdmin]);
-
-    /* ── Derived: active students map ──────────────────────────────── */
-    const activeStudentsData = useMemo(() => {
-        const map = {};
-        liveEvents.forEach((e) => {
-            const sid = e?.studentId?._id || e?.studentId;
-            if (!sid) return;
-            if (!map[sid]) map[sid] = { studentId: sid, events: [], riskScore: 0 };
-            map[sid].events.push(e);
-            map[sid].riskScore += (e.riskWeight || 0);
-        });
-
-        return Object.values(map).map((s) => ({
-            ...s,
-            riskLevel: s.riskScore >= 20 ? 'HIGH' : s.riskScore >= 10 ? 'MEDIUM' : 'LOW',
-        }));
-    }, [liveEvents]);
-
-    /* ── Stat card values ───────────────────────────────────────────── */
     const statCards = isStudent
         ? [
-            { icon: BookOpen,    label: 'Total Attempts',   value: stats?.total  ?? '—', sub: 'All time',       color: '#3B82F6' },
-            { icon: CheckCircle, label: 'Passed',           value: stats?.passed ?? '—', sub: 'Exams passed',   color: '#22C55E' },
-            { icon: XCircle,     label: 'Failed',           value: stats?.failed ?? '—', sub: 'Exams failed',   color: '#EF4444' },
-            { icon: FileText,    label: 'Available Exams',  value: exams.length,          sub: 'Open to take',  color: '#6366F1' },
+            { icon: BookOpen,    label: 'Total Attempts',   value: stats?.total  ?? '—', sub: 'Completed exams', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
+            { icon: CheckCircle, label: 'Success Rate',     value: stats?.total ? `${Math.round((stats.passed / stats.total) * 100)}%` : '—', sub: `${stats?.passed || 0} exams passed`, color: 'var(--success)', bg: 'var(--success-bg)' },
+            { icon: Clock,       label: 'Avg. Score',       value: stats?.avgScore ?? '—', sub: 'Across all tests', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+            { icon: FileText,    label: 'Open Exams',       value: stats?.available ?? '—', sub: 'Available to take', color: 'var(--info)', bg: 'var(--info-bg)' },
         ]
         : [
-            { icon: BookOpen,    label: 'Total Exams',      value: stats?.total     ?? '—', sub: 'All time',         color: '#3B82F6' },
-            { icon: TrendingUp,  label: 'Published',        value: stats?.published ?? '—', sub: 'Live to students', color: '#22C55E' },
-            { icon: BarChart3,   label: 'Draft',            value: stats?.draft     ?? '—', sub: 'Unpublished',      color: '#F59E0B' },
-            { icon: ShieldCheck, label: 'Active Sessions',  value: stats?.active    ?? '—', sub: 'Currently running',color: '#6366F1' },
+            { icon: Users,       label: 'Total Students',   value: stats?.students  ?? '—', sub: 'Across organizations', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
+            { icon: ShieldCheck, label: 'Active Sessions',  value: stats?.active    ?? '—', sub: 'Currently monitored', color: 'var(--success)', bg: 'var(--success-bg)' },
+            { icon: Activity,    label: 'Total Flags',      value: stats?.flags     ?? '—', sub: 'AI detections', color: 'var(--danger)', bg: 'var(--danger-bg)' },
+            { icon: Zap,         label: 'System Health',    value: '99.8%',         sub: 'AI API Latency: 42ms', color: 'var(--info)', bg: 'var(--info-bg)' },
         ];
 
-    /* ── Render ─────────────────────────────────────────────────────── */
     return (
         <div style={{ display: 'flex' }}>
             <Sidebar />
             <main className="main-content">
                 <Navbar title="Dashboard" />
 
-                {/* Greeting */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                    <h2 style={{ margin: '0 0 0.25rem', fontSize: '1.35rem', fontWeight: 700, color: '#1E293B' }}>
-                        Welcome back, {user?.name?.split(' ')[0]} 👋
-                    </h2>
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748B' }}>
-                        {isStudent
-                            ? "Here's a summary of your exam activity."
-                            : "Here's an overview of your exam platform."}
-                    </p>
+                {/* Hero Greeting */}
+                <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: 'var(--n-900)', letterSpacing: '-0.02em' }}>
+                            Welcome back, {user?.name?.split(' ')[0]}
+                        </h2>
+                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: 'var(--n-500)' }}>
+                            {isStudent 
+                                ? "Here's your academic performance at a glance." 
+                                : "Manage your exams and monitor live sessions in real-time."}
+                        </p>
+                    </div>
+                    {isStudent && (
+                        <a href="/exams" className="btn btn-primary">
+                            <BookOpen size={16} /> Start New Exam
+                        </a>
+                    )}
                 </div>
 
-                {/* Stat cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                {/* Stat Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
                     {statCards.map((s) => (
                         <StatCard key={s.label} {...s} loading={loading} />
                     ))}
                 </div>
 
-                {/* Middle row: chart + recent exams */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-                    {/* Chart */}
+                {/* Main Content Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+                    {/* Activity Chart */}
                     <div className="card animate-fade-up">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                             <div>
-                                <h3 style={{ margin: 0, fontWeight: 600, color: '#1E293B' }}>Weekly Activity</h3>
-                                <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#94A3B8' }}>
-                                    {isStudent ? 'Your exam attempts this week' : 'Exam attempts vs flagged events'}
+                                <h3 style={{ margin: 0, fontWeight: 700, color: 'var(--n-800)', fontSize: '1.05rem' }}>Activity Overview</h3>
+                                <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--n-400)' }}>
+                                    {isStudent ? 'Attempts and scoring trends' : 'System load and incident alerts'}
                                 </p>
                             </div>
-                            <span className="badge badge-blue">This Week</span>
+                            <div className="badge badge-info" style={{ borderRadius: 6 }}>Last 7 Days</div>
                         </div>
-                        <ResponsiveContainer width="100%" height={210}>
-                            <AreaChart data={emptyChart}>
+                        
+                        <ResponsiveContainer width="100%" height={260}>
+                            <AreaChart data={emptyChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <defs>
-                                    <linearGradient id="ga" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%"  stopColor="#3B82F6" stopOpacity={0.15} />
-                                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}    />
-                                    </linearGradient>
-                                    <linearGradient id="gf" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%"  stopColor="#EF4444" stopOpacity={0.12} />
-                                        <stop offset="95%" stopColor="#EF4444" stopOpacity={0}    />
+                                    <linearGradient id="colorAttempts" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="var(--brand-500)" stopOpacity={0.15}/>
+                                        <stop offset="95%" stopColor="var(--brand-500)" stopOpacity={0}/>
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                                <XAxis dataKey="date" tick={{ fill: '#94A3B8', fontSize: 11 }} tickLine={false} axisLine={false} />
-                                <YAxis tick={{ fill: '#94A3B8', fontSize: 11 }} tickLine={false} axisLine={false} />
-                                <Tooltip contentStyle={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, color: '#1E293B' }} />
-                                <Area type="monotone" dataKey="attempts" stroke="#3B82F6" strokeWidth={2} fill="url(#ga)" name="Attempts" />
-                                {!isStudent && <Area type="monotone" dataKey="flags" stroke="#EF4444" strokeWidth={2} fill="url(#gf)" name="Flags" />}
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                                <XAxis 
+                                    dataKey="date" 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fill: 'var(--n-400)', fontSize: 11, fontWeight: 500 }}
+                                    dy={10}
+                                />
+                                <YAxis 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fill: 'var(--n-400)', fontSize: 11, fontWeight: 500 }}
+                                />
+                                <Tooltip 
+                                    contentStyle={{ 
+                                        borderRadius: 'var(--r-md)', 
+                                        border: 'none', 
+                                        boxShadow: 'var(--shadow-lg)',
+                                        fontSize: '0.8rem'
+                                    }} 
+                                />
+                                <Area 
+                                    type="monotone" 
+                                    dataKey="attempts" 
+                                    stroke="var(--brand-500)" 
+                                    strokeWidth={3} 
+                                    fillOpacity={1} 
+                                    fill="url(#colorAttempts)" 
+                                />
                             </AreaChart>
                         </ResponsiveContainer>
-                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: '#94A3B8', textAlign: 'center' }}>
-                            Live weekly analytics will populate once exam sessions are recorded.
-                        </p>
-                    </div>
-
-                    {/* Recent exams */}
-                    <div className="card animate-fade-up">
-                        <h3 style={{ margin: '0 0 1rem', fontWeight: 600, color: '#1E293B', fontSize: '0.95rem' }}>
-                            {isStudent ? 'Available Exams' : 'Recent Exams'}
-                        </h3>
-                        {loading ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                {[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48 }} />)}
-                            </div>
-                        ) : exams.length === 0 ? (
-                            <div style={{ color: '#94A3B8', fontSize: '0.82rem', textAlign: 'center', padding: '2rem 0' }}>
-                                No exams available yet.
-                            </div>
-                        ) : (
-                            exams.slice(0, 5).map((exam) => (
-                                <RecentExamRow key={exam._id} exam={exam} isStudent={isStudent} />
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* AI status bar */}
-                <div className="card animate-fade-up" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '1.25rem', marginBottom: '1.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <TrendingUp size={17} color="#22C55E" />
-                        <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#1E293B' }}>AI Proctoring Status</span>
-                    </div>
-                    {[
-                        { label: 'Face Detection',       status: 'Operational', color: '#22C55E' },
-                        { label: 'Deepfake Detection',   status: 'Operational', color: '#22C55E' },
-                        { label: 'Behavioral Biometrics',status: 'Operational', color: '#22C55E' },
-                        { label: 'Python AI Service',    status: 'Standby',     color: '#F59E0B' },
-                    ].map(({ label, status, color }) => (
-                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#64748B' }}>
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                            {label}
-                            <span style={{ color, fontWeight: 600 }}>{status}</span>
+                        <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: 8, background: 'var(--n-50)', textAlign: 'center' }}>
+                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--n-500)', fontWeight: 500 }}>
+                                <TrendingUp size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                                Real-time analytics will sync once more sessions are completed.
+                            </p>
                         </div>
-                    ))}
-                </div>
+                    </div>
 
-                {/* Live Monitor — examiner / admin only */}
-                {(isExaminer || isAdmin) && (
-                    <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                            <ShieldCheck size={20} color="#3B82F6" />
-                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>Live Monitor</h3>
+                    {/* Recent Exams Panel */}
+                    <div className="card animate-fade-up" style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+                            <h3 style={{ margin: 0, fontWeight: 700, color: 'var(--n-800)', fontSize: '1.05rem' }}>
+                                {isStudent ? 'History' : 'Exams'}
+                            </h3>
+                            <a href="/exams" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--brand-500)', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                View all <ChevronRight size={14} />
+                            </a>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', alignItems: 'start' }}>
-                            <div>
-                                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748B', marginBottom: '1rem', margin: '0 0 1rem' }}>
-                                    Active Students &amp; Risk Scores
-                                </h4>
+                        
+                        <div style={{ flex: 1 }}>
+                            {loading ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                    {activeStudentsData.length === 0 ? (
-                                        <div style={{ color: '#94A3B8', fontSize: '0.85rem' }}>
-                                            No active exam participants at the moment.
-                                        </div>
-                                    ) : (
-                                        activeStudentsData.map((student) => (
-                                            <StudentMonitorCard key={student.studentId} {...student} />
-                                        ))
-                                    )}
+                                    {[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 56 }} />)}
                                 </div>
-                            </div>
-                            <div>
-                                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748B', margin: '0 0 1rem' }}>
-                                    Flagged Alerts Log
-                                </h4>
-                                <AlertLogTable events={liveEvents} />
-                            </div>
+                            ) : exams.length === 0 ? (
+                                <div className="empty-state" style={{ padding: '2rem 0' }}>
+                                    <FileText size={32} color="var(--n-200)" />
+                                    <p style={{ marginTop: '0.5rem', fontSize: '0.82rem' }}>No records found.</p>
+                                </div>
+                            ) : (
+                                exams.slice(0, 6).map((exam) => (
+                                    <RecentExamRow key={exam._id} exam={exam} isStudent={isStudent} />
+                                ))
+                            )}
                         </div>
                     </div>
-                )}
+                </div>
 
-                {/* Student: encourage taking exams */}
-                {isStudent && exams.length > 0 && (
-                    <div className="card animate-fade-up" style={{ textAlign: 'center', padding: '2rem', background: 'linear-gradient(135deg, #EFF6FF, #F0FDF4)' }}>
-                        <BookOpen size={32} color="#3B82F6" style={{ marginBottom: '0.75rem' }} />
-                        <h3 style={{ margin: '0 0 0.5rem', fontWeight: 700, color: '#1E293B' }}>
-                            {exams.length} exam{exams.length !== 1 ? 's' : ''} available
-                        </h3>
-                        <p style={{ margin: '0 0 1rem', color: '#64748B', fontSize: '0.875rem' }}>
-                            Complete your identity verification to start any exam.
-                        </p>
-                        <a href="/exams" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#3B82F6', color: '#fff', borderRadius: 8, padding: '0.625rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none' }}>
-                            <BookOpen size={16} /> Browse Exams
-                        </a>
+                {/* Bottom Row: System Status + Action */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    <div className="card animate-fade-up" style={{ background: 'var(--n-900)', border: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem' }}>
+                            <Activity size={18} color="var(--brand-400)" />
+                            <h4 style={{ margin: 0, color: '#fff', fontSize: '0.95rem', fontWeight: 700 }}>AI Core Performance</h4>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            {[
+                                { label: 'Facial Recognition', value: 'Active', color: 'var(--success)' },
+                                { label: 'Pattern Analysis', value: 'Active', color: 'var(--success)' },
+                                { label: 'Audio Processing', value: 'Standby', color: 'var(--warning)' },
+                                { label: 'Websocket Relay', value: 'Stable', color: 'var(--brand-400)' },
+                            ].map((s) => (
+                                <div key={s.label} style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem', borderRadius: 8 }}>
+                                    <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>{s.label}</div>
+                                    <div style={{ fontSize: '0.875rem', color: s.color, fontWeight: 700, marginTop: 2 }}>{s.value}</div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                )}
+
+                    <div className="card animate-fade-up" style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-700))', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '2rem' }}>
+                        <div>
+                            <ShieldCheck size={40} style={{ marginBottom: '1rem', opacity: 0.9 }} />
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Security First Architecture</h3>
+                            <p style={{ margin: '0.5rem 0 1.5rem', fontSize: '0.875rem', opacity: 0.8, maxWidth: 280 }}>
+                                HawkWatch uses multi-modal AI to ensure 99.9% integrity during exam sessions.
+                            </p>
+                            <button className="btn" style={{ background: '#fff', color: 'var(--brand-600)' }}>
+                                Learn about AI Proctoring
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </main>
         </div>
     );

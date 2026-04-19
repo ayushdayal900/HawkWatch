@@ -1,24 +1,30 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import api, { proctoringAPI } from '../services/api';
 import ProctoringOverlay from '../components/ProctoringOverlay';
-import { Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Loader2, ShieldAlert } from 'lucide-react';
+
+import useExamStore from '../store/examStore';
+import ExamHeader from '../components/exam/ExamHeader';
+import ExamNavigation from '../components/exam/ExamNavigation';
+import ExamQuestion from '../components/exam/ExamQuestion';
+import ExamFooter from '../components/exam/ExamFooter';
 
 export default function StudentExamPage() {
     const { id } = useParams();
-    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const verified = searchParams.get('verified') === '1';
 
-    const [exam,         setExam]         = useState(null);
-    const [examSession,  setExamSession]  = useState(null);
-    const [procSessionId,setProcSessionId]= useState(null);
-    const [answers,      setAnswers]      = useState({});
-    const [currentQ,     setCurrentQ]     = useState(0);
-    const [timeLeft,     setTimeLeft]     = useState(0);
-    const [loading,      setLoading]      = useState(true);
-    const [pageError,    setPageError]    = useState(null);
-    const [submitting,   setSubmitting]   = useState(false);
+    const {
+        currentExam, examAttempt, questions, answers, timeRemaining,
+        setCurrentExam, setExamAttempt, setAnswer, setTimeRemaining, clearExam
+    } = useExamStore();
+
+    const [procSessionId, setProcSessionId] = useState(null);
+    const [currentQ, setCurrentQ] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [pageError, setPageError] = useState(null);
+    const [submitting, setSubmitting] = useState(false);
+    const [terminatingReason, setTerminatingReason] = useState(null);
 
     // Initial session hook
     useEffect(() => {
@@ -29,24 +35,18 @@ export default function StudentExamPage() {
                 const { data: examData } = await api.get(`/exams/${id}`);
                 if (!mounted) return;
                 const examObj = examData.data || examData;
-                setExam(examObj);
+                setCurrentExam(examObj);
 
                 // 2. Recover (or start) session.
-                //    Verification page already called POST /exams/start.
-                //    We try to GET the active session first to avoid a
-                //    double-start 403; fall back to POST only if needed.
                 let sessionDetails;
                 try {
-                    // Route: GET /api/exams/session/:examId
                     const { data: sessData } = await api.get(`/exams/session/${id}`);
                     sessionDetails = sessData.data || sessData;
                 } catch (getErr) {
-                    // No active session found — try starting fresh
                     if (getErr.response?.status === 404 || getErr.response?.status === 400) {
                         const { data: startData } = await api.post('/exams/start', { examId: id });
                         sessionDetails = startData.data || startData;
                     } else if (getErr.response?.status === 403) {
-                        // Not verified — send back to verification
                         navigate(`/exam-verification/${id}`);
                         return;
                     } else {
@@ -55,13 +55,11 @@ export default function StudentExamPage() {
                 }
 
                 if (!mounted) return;
-                setExamSession(sessionDetails);
+                setExamAttempt(sessionDetails);
 
                 // Recover prior answers
                 if (sessionDetails?.answers?.length > 0) {
-                    const recovered = {};
-                    sessionDetails.answers.forEach(a => recovered[a.questionId] = a.answer);
-                    setAnswers(recovered);
+                    sessionDetails.answers.forEach(a => setAnswer(a.questionId, a.answer));
                 }
 
                 // Timer sync
@@ -69,29 +67,23 @@ export default function StudentExamPage() {
                     (Date.now() - new Date(sessionDetails.startTimestamp).getTime()) / 1000
                 );
                 const remaining = (examObj.duration * 60) - passedTime;
-                setTimeLeft(remaining > 0 ? remaining : 0);
+                setTimeRemaining(remaining > 0 ? remaining : 0);
 
-                // 3. Start Proctoring (non-fatal — exam still works if this fails)
+                // 3. Start Proctoring
                 try {
                     const { data: procData } = await proctoringAPI.startSession({ examId: id });
                     if (mounted) setProcSessionId(procData?.data?._id || procData?._id || null);
                 } catch (procErr) {
                     if (procErr.response?.status === 409) {
-                        // Session already active — extract existing ID if returned
                         const sid = procErr.response?.data?.sessionId;
                         if (sid && mounted) setProcSessionId(sid);
                     }
-                    // Other proctoring errors are non-fatal
-                    console.warn('Proctoring start issue (non-fatal):', procErr.message);
                 }
 
             } catch (err) {
-                console.error('Exam init error:', err);
                 if (mounted) {
                     setPageError(
-                        err.response?.data?.message ||
-                        err.message ||
-                        'Could not load exam. Please check your connection and try again.'
+                        err.response?.data?.message || err.message || 'Could not load exam.'
                     );
                 }
             } finally {
@@ -99,26 +91,25 @@ export default function StudentExamPage() {
             }
         };
         init();
-        return () => { mounted = false; };
-    }, [id, navigate]);
+        return () => { 
+            mounted = false; 
+            clearExam(); 
+        };
+    }, [id, navigate, setCurrentExam, setExamAttempt, setAnswer, setTimeRemaining, clearExam]);
 
     // Timer Loop
     useEffect(() => {
-        if (!examSession || timeLeft <= 0 || loading) return;
+        if (!examAttempt || timeRemaining === null || timeRemaining <= 0 || loading) return;
         const interval = setInterval(() => {
-            setTimeLeft(t => {
-                if (t <= 1) {
-                    clearInterval(interval);
-                    autoSubmit();
-                    return 0;
-                }
-                return t - 1;
-            });
+            setTimeRemaining(timeRemaining - 1);
+            if (timeRemaining <= 1) {
+                clearInterval(interval);
+                autoSubmit('Time Expired');
+            }
         }, 1000);
         return () => clearInterval(interval);
-    }, [examSession, timeLeft, loading]);
+    }, [examAttempt, timeRemaining, loading, setTimeRemaining]);
 
-    // Formatting
     const formatTime = (secs) => {
         const h = Math.floor(secs / 3600);
         const m = Math.floor((secs % 3600) / 60);
@@ -127,72 +118,70 @@ export default function StudentExamPage() {
     };
 
     // Auto-save logic
-    const handleAnswer = async (questionId, ans) => {
-        setAnswers(prev => ({ ...prev, [questionId]: ans }));
+    const handleAnswer = useCallback(async (questionId, ans) => {
+        setAnswer(questionId, ans);
         try {
             await api.post(`/exams/${id}/save-answer`, { questionId, answer: ans });
         } catch (e) {
             console.error('Failed to auto-save answer:', e);
         }
-    };
+    }, [id, setAnswer]);
 
     // Submit procedure
-    const [terminatingReason, setTerminatingReason] = useState(null);
-    const autoSubmit = async (reason = null) => {
+    const autoSubmit = useCallback(async (reason = null) => {
         if (submitting) return;
         setSubmitting(true);
         if (reason) setTerminatingReason(reason);
 
         try {
-            // End proctoring explicitly
             if (procSessionId) {
                 await proctoringAPI.endSession(procSessionId).catch(() => {});
             }
-            // Submit exam securely
-            const { data } = await api.post('/exams/submit', { examId: id, answers: Object.entries(answers) });
+            const currentAnswers = useExamStore.getState().answers;
+            const { data } = await api.post('/exams/submit', { examId: id, answers: Object.entries(currentAnswers) });
             
-            navigate(`/student/results/${data.data.attemptId}`, { replace: true });
+            navigate(`/student-exam-results/${data.data?.attemptId || data.attemptId}`, { replace: true });
         } catch (e) {
             setSubmitting(false);
         }
-    };
+    }, [id, navigate, procSessionId, submitting]);
 
     if (loading) return (
-        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, fontFamily: 'Inter, sans-serif' }}>
-            <div style={{ width: 36, height: 36, border: '3px solid #3B82F6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-            <span style={{ color: '#64748B', fontWeight: 600 }}>Loading Secure Exam Container…</span>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div className="empty-state" style={{ height: '100vh', background: 'var(--bg)' }}>
+            <Loader2 size={40} className="animate-spin" color="var(--brand-500)" />
+            <h3 style={{ marginTop: '1rem' }}>Initializing Secure Container</h3>
+            <p>Loading your exam environment and activating AI proctoring...</p>
         </div>
     );
 
     if (pageError) return (
-        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, fontFamily: 'Inter, sans-serif', padding: '2rem', textAlign: 'center' }}>
-            <AlertTriangle size={48} color="#EF4444" />
-            <h2 style={{ margin: 0, color: '#1E293B' }}>Could Not Load Exam</h2>
-            <p style={{ margin: 0, color: '#64748B', maxWidth: 400 }}>{pageError}</p>
-            <button onClick={() => window.location.reload()}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0.7rem 1.5rem', borderRadius: 8, border: 'none', background: '#3B82F6', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
-                <RefreshCw size={15} /> Retry
-            </button>
-            <button onClick={() => navigate('/my-exams')}
-                style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline' }}>
-                Back to My Exams
-            </button>
+        <div className="empty-state" style={{ height: '100vh', background: 'var(--bg)', padding: '2rem' }}>
+            <div style={{ background: 'var(--danger-bg)', padding: '1.5rem', borderRadius: '50%', marginBottom: '1rem' }}>
+                <ShieldAlert size={40} color="var(--danger)" />
+            </div>
+            <h3>Critical Access Error</h3>
+            <p style={{ maxWidth: 420 }}>{pageError}</p>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                <button onClick={() => window.location.reload()} className="btn btn-primary">
+                    <RefreshCw size={16} /> Retry Connection
+                </button>
+                <button onClick={() => navigate('/exams')} className="btn btn-secondary">
+                    Back to Dashboard
+                </button>
+            </div>
         </div>
     );
 
-    if (!exam) return (
-        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontFamily: 'Inter, sans-serif' }}>
-            Exam data not available.
+    if (!currentExam) return (
+        <div className="empty-state" style={{ height: '100vh' }}>
+            <p>Exam configuration unavailable.</p>
         </div>
     );
 
-    const questions = exam.questions || [];
     const activeQ = questions[currentQ];
 
     return (
-        <div style={{ display: 'flex', height: '100vh', background: '#F8FAFC', fontFamily: 'Inter, sans-serif' }}>
-            {/* Proctoring Viewport Block */}
+        <div className="exam-shell">
             {procSessionId && (
                 <ProctoringOverlay 
                     sessionId={procSessionId} 
@@ -201,119 +190,56 @@ export default function StudentExamPage() {
                 />
             )}
 
-            {/* Left Nav Pane */}
-            <div style={{ width: 260, flexShrink: 0, background: '#fff', borderRight: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '1rem', borderBottom: '1px solid #E2E8F0', background: '#0F172A', color: '#fff' }}>
-                    <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.25rem' }}>HawkWatch Exam</h2>
-                    <p style={{ margin: 0, fontSize: '0.75rem', opacity: 0.8 }}>{exam.title}</p>
-                </div>
-                <div style={{ padding: '1rem', flex: 1, overflowY: 'auto' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748B', marginBottom: '0.75rem' }}>QUESTIONS MAP</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                        {questions.map((q, idx) => {
-                            const isAns = answers[q._id] !== undefined;
-                            const isCur = currentQ === idx;
-                            return (
-                                <button
-                                    key={q._id}
-                                    onClick={() => setCurrentQ(idx)}
-                                    style={{
-                                        aspectRatio: '1', borderRadius: 6, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
-                                        border: isCur ? '2px solid #3B82F6' : '1px solid transparent',
-                                        background: isAns ? '#10B981' : '#E2E8F0',
-                                        color: isAns ? '#fff' : '#475569',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    {idx + 1}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
+            <ExamNavigation 
+                examTitle={currentExam.title} 
+                questions={questions} 
+                currentQ={currentQ} 
+                answers={answers} 
+                setCurrentQ={setCurrentQ} 
+            />
 
-            {/* Center Main Space */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+            <main className="exam-main">
                 {terminatingReason && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <AlertTriangle size={48} color="#DC2626" />
-                        <h2 style={{ color: '#1E293B', marginTop: 10 }}>Exam Terminating</h2>
-                        <p style={{ color: '#64748B' }}>{terminatingReason}</p>
+                    <div className="modal-overlay" style={{ zIndex: 10000 }}>
+                        <div className="modal-panel" style={{ textAlign: 'center', padding: '3rem' }}>
+                            <div style={{ background: 'var(--danger-bg)', width: 64, height: 64, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+                                <AlertTriangle size={32} color="var(--danger)" />
+                            </div>
+                            <h2 style={{ color: 'var(--n-900)', fontWeight: 800, letterSpacing: '-0.02em' }}>Session Terminating</h2>
+                            <p style={{ color: 'var(--n-500)', marginTop: '0.5rem' }}>{terminatingReason}</p>
+                            <div className="skeleton" style={{ height: 4, marginTop: '2rem', width: '100%' }} />
+                            <p style={{ fontSize: '0.75rem', color: 'var(--n-400)', marginTop: '1rem' }}>Auto-submitting your progress...</p>
+                        </div>
                     </div>
                 )}
                 
-                {/* Header bar */}
-                <div style={{ padding: '1rem 2rem', background: '#fff', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: '#1E293B' }}>Question {currentQ + 1} of {questions.length}</h3>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: timeLeft < 300 ? '#FEF2F2' : '#F1F5F9', color: timeLeft < 300 ? '#DC2626' : '#334155', padding: '0.5rem 1rem', borderRadius: 99, fontWeight: 700, fontSize: '1.1rem' }}>
-                        <Clock size={18} /> {formatTime(timeLeft)}
-                    </div>
+                <ExamHeader 
+                    currentQ={currentQ} 
+                    totalQ={questions.length} 
+                    timeLeft={timeRemaining} 
+                    formatTime={formatTime} 
+                />
+
+                <div className="exam-content">
+                    <ExamQuestion 
+                        activeQ={activeQ} 
+                        answers={answers} 
+                        handleAnswer={handleAnswer}
+                        questionIndex={currentQ}
+                        totalQuestions={questions.length}
+                    />
                 </div>
 
-                {/* Question area */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '2rem' }}>
-                    {activeQ ? (
-                        <div style={{ background: '#fff', borderRadius: 12, padding: '2rem', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', maxWidth: 800, margin: '0 auto' }}>
-                            <div style={{ fontSize: '1.1rem', color: '#1E293B', marginBottom: '2rem', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: activeQ.questionText }} />
-                            
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                {activeQ.options?.map((opt, i) => (
-                                    <label key={i} style={{ 
-                                        display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', borderRadius: 8, cursor: 'pointer', border: '1px solid',
-                                        borderColor: answers[activeQ._id] === String(i) ? '#3B82F6' : '#E2E8F0',
-                                        background: answers[activeQ._id] === String(i) ? '#EFF6FF' : '#fff',
-                                        transition: 'all 0.2s'
-                                    }}>
-                                        <input 
-                                            type="radio" 
-                                            name={activeQ._id} 
-                                            checked={answers[activeQ._id] === String(i)} 
-                                            onChange={() => handleAnswer(activeQ._id, String(i))}
-                                            style={{ width: 18, height: 18, cursor: 'pointer' }}
-                                        />
-                                        <span style={{ fontSize: '1rem', color: '#334155' }}>{opt.text || opt.label || opt}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    ) : (
-                        <div>No matching question topology found.</div>
-                    )}
-                </div>
-
-                {/* Footer Controls */}
-                <div style={{ padding: '1rem 2rem', background: '#fff', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between' }}>
-                    <button 
-                        onClick={() => setCurrentQ(q => Math.max(0, q - 1))} 
-                        disabled={currentQ === 0}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: currentQ === 0 ? '#94A3B8' : '#334155', cursor: currentQ === 0 ? 'not-allowed' : 'pointer', fontWeight: 600 }}
-                    >
-                        <ChevronLeft size={16} /> Previous
-                    </button>
-                    
-                    {currentQ === questions.length - 1 ? (
-                        <button 
-                            onClick={async () => {
-                                if (window.confirm('Are you sure you want to submit your exam right now? You cannot undo this.')) {
-                                    autoSubmit('Student finalized attempt');
-                                }
-                            }}
-                            disabled={submitting}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.5rem', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', cursor: 'pointer', fontWeight: 700 }}
-                        >
-                            {submitting ? 'Submitting...' : <><Send size={16} /> Submit Exam</>}
-                        </button>
-                    ) : (
-                        <button 
-                            onClick={() => setCurrentQ(q => Math.min(questions.length - 1, q + 1))}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.25rem', borderRadius: 8, border: 'none', background: '#3B82F6', color: '#fff', cursor: 'pointer', fontWeight: 600 }}
-                        >
-                            Next <ChevronRight size={16} />
-                        </button>
-                    )}
-                </div>
-            </div>
+                <ExamFooter 
+                    currentQ={currentQ} 
+                    totalQ={questions.length} 
+                    questions={questions}
+                    answers={answers}
+                    setCurrentQ={setCurrentQ} 
+                    submitting={submitting} 
+                    autoSubmit={autoSubmit} 
+                />
+            </main>
         </div>
     );
 }

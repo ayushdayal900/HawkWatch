@@ -1,21 +1,16 @@
-/**
- * pages/CreateExam.jsx
- * Full exam builder: details → question builder → preview → save/publish.
- */
-
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import { examAPI, organizationAPI } from '../services/api';
 import toast from 'react-hot-toast';
-import { useAuth } from '../context/AuthContext';
+import useAuthStore from '../store/authStore';
 import {
     Plus, Trash2, Save, Send, ChevronDown, ChevronUp,
     BookOpen, Clock, Target, Shield, CheckCircle,
+    Info, Settings, Layout, Award, AlertCircle, Eye
 } from 'lucide-react';
 
-/* ─── Constants ──────────────────────────────────────────────────────── */
 const LABELS = ['A', 'B', 'C', 'D'];
 
 const defaultQuestion = () => ({
@@ -38,40 +33,44 @@ const defaultProctoring = {
     tabSwitchLimit:      3,
 };
 
-/* ─── Sub-components ─────────────────────────────────────────────────── */
-function Toggle({ label, checked, onChange, description }) {
+function CustomToggle({ label, checked, onChange, description }) {
     return (
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', cursor: 'pointer', padding: '0.5rem 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', borderRadius: 10, background: 'var(--n-50)', border: '1px solid var(--border)' }}>
+            <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--n-800)' }}>{label}</div>
+                {description && <div style={{ fontSize: '0.7rem', color: 'var(--n-400)', marginTop: 2 }}>{description}</div>}
+            </div>
             <div
                 onClick={onChange}
                 style={{
-                    width: 38, height: 22, borderRadius: 999, flexShrink: 0, marginTop: 2,
-                    background: checked ? '#3B82F6' : '#CBD5E1',
-                    position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                    width: 44, height: 24, borderRadius: 99, flexShrink: 0,
+                    background: checked ? 'var(--brand-500)' : 'var(--n-200)',
+                    position: 'relative', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', cursor: 'pointer',
+                    boxShadow: checked ? '0 0 10px var(--brand-200)' : 'none'
                 }}
             >
                 <div style={{
-                    position: 'absolute', top: 3, left: checked ? 18 : 3,
-                    width: 16, height: 16, borderRadius: '50%', background: '#fff',
-                    transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    position: 'absolute', top: 3, left: checked ? 22 : 3,
+                    width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: 'var(--shadow-sm)'
                 }} />
             </div>
-            <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#1E293B' }}>{label}</div>
-                {description && <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>{description}</div>}
-            </div>
-        </label>
+        </div>
     );
 }
 
-function SectionCard({ title, icon: Icon, children, accent = '#3B82F6' }) {
+function Section({ title, icon: Icon, children, badge }) {
     return (
-        <div className="card animate-fade-up" style={{ marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: `${accent}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon size={16} color={accent} />
+        <div className="card animate-fade-up" style={{ marginBottom: '1.5rem', overflow: 'visible' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--brand-50)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon size={18} color="var(--brand-600)" />
+                    </div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--n-900)', letterSpacing: '-0.02em' }}>{title}</h3>
                 </div>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#1E293B' }}>{title}</h3>
+                {badge && <div className="badge badge-info">{badge}</div>}
             </div>
             {children}
         </div>
@@ -79,138 +78,83 @@ function SectionCard({ title, icon: Icon, children, accent = '#3B82F6' }) {
 }
 
 function QuestionCard({ question, index, onChange, onRemove, collapsed, onToggleCollapse }) {
-    const diffColor = { easy: '#22C55E', medium: '#F59E0B', hard: '#EF4444' };
+    const diffColor = { easy: 'var(--success)', medium: 'var(--warning)', hard: 'var(--danger)' };
 
     return (
-        <div style={{
-            border: '1px solid #E2E8F0', borderRadius: 10, marginBottom: '0.75rem',
-            background: '#FAFAFA', overflow: 'hidden',
-        }}>
-            {/* Header */}
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: '1rem', background: '#fff', overflow: 'hidden', transition: 'box-shadow 0.2s' }}>
             <div
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1rem', cursor: 'pointer', background: '#F8FAFC' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', cursor: 'pointer', background: 'var(--n-50)' }}
                 onClick={onToggleCollapse}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{
-                        width: 26, height: 26, borderRadius: '50%', background: '#3B82F6',
-                        color: '#fff', fontSize: '0.75rem', fontWeight: 700,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>{index + 1}</span>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#334155', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {question.questionText || <em style={{ color: '#94A3B8' }}>Untitled question</em>}
-                    </span>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: diffColor[question.difficulty], background: `${diffColor[question.difficulty]}15`, borderRadius: 999, padding: '2px 8px' }}>
-                        {question.difficulty}
-                    </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--brand-500)', color: '#fff', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {index + 1}
+                    </div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--n-800)', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {question.questionText || <span style={{ color: 'var(--n-400)', fontWeight: 500 }}>Empty Question...</span>}
+                    </div>
+                    <div className="badge" style={{ background: `${diffColor[question.difficulty]}15`, color: diffColor[question.difficulty], fontSize: '0.65rem' }}>
+                        {question.difficulty.toUpperCase()}
+                    </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600 }}>{question.points} pt{question.points !== 1 ? 's' : ''}</span>
-                    <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                        style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '4px', borderRadius: 6, display: 'flex' }}
-                    >
-                        <Trash2 size={14} />
-                    </button>
-                    {collapsed ? <ChevronDown size={14} color="#94A3B8" /> : <ChevronUp size={14} color="#94A3B8" />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)' }}>{question.points} PT</div>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 4 }}><Trash2 size={16} /></button>
+                    {collapsed ? <ChevronDown size={18} color="var(--n-400)" /> : <ChevronUp size={18} color="var(--n-400)" />}
                 </div>
             </div>
 
-            {/* Body */}
             {!collapsed && (
-                <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                    {/* Question text */}
+                <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <div>
-                        <label style={{ display: 'block', marginBottom: 4, fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Question Text *</label>
-                        <textarea
-                            className="input"
-                            rows={2}
-                            required
-                            value={question.questionText}
-                            onChange={(e) => onChange('questionText', e.target.value)}
-                            placeholder="Enter the question…"
-                            style={{ resize: 'vertical' }}
-                        />
+                        <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Question Content</label>
+                        <textarea className="input" rows={3} value={question.questionText} onChange={(e) => onChange('questionText', e.target.value)} placeholder="Type your question here..." />
                     </div>
 
-                    {/* Options */}
                     <div>
-                        <label style={{ display: 'block', marginBottom: 6, fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Options (A–D) *</label>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <label style={{ display: 'block', marginBottom: 10, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Multiple Choice Options</label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                             {question.options.map((opt, oi) => (
-                                <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input
-                                        type="radio"
-                                        name={`correct-${index}`}
-                                        checked={question.correctAnswer === opt.label}
-                                        onChange={() => onChange('correctAnswer', opt.label)}
-                                        style={{ accentColor: '#3B82F6', flexShrink: 0 }}
-                                        title="Mark as correct answer"
-                                    />
-                                    <span style={{ fontWeight: 700, color: '#64748B', width: 20, flexShrink: 0 }}>{opt.label}</span>
+                                <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <div 
+                                        onClick={() => onChange('correctAnswer', opt.label)}
+                                        style={{ 
+                                            width: 24, height: 24, borderRadius: '50%', border: `2px solid ${question.correctAnswer === opt.label ? 'var(--success)' : 'var(--border)'}`,
+                                            background: question.correctAnswer === opt.label ? 'var(--success)' : 'transparent',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
+                                        }}
+                                    >
+                                        {question.correctAnswer === opt.label && <CheckCircle size={14} color="#fff" />}
+                                    </div>
+                                    <div style={{ fontWeight: 800, color: 'var(--n-400)', width: 14 }}>{opt.label}</div>
                                     <input
                                         className="input"
-                                        required
                                         value={opt.text}
                                         onChange={(e) => {
-                                            const newOpts = question.options.map((o, i) =>
-                                                i === oi ? { ...o, text: e.target.value } : o
-                                            );
+                                            const newOpts = question.options.map((o, i) => i === oi ? { ...o, text: e.target.value } : o);
                                             onChange('options', newOpts);
                                         }}
-                                        placeholder={`Option ${opt.label}`}
-                                        style={{ flex: 1 }}
+                                        placeholder={`Option ${opt.label} text...`}
+                                        style={{ flex: 1, height: '2.5rem' }}
                                     />
-                                    {question.correctAnswer === opt.label && (
-                                        <CheckCircle size={16} color="#22C55E" style={{ flexShrink: 0 }} />
-                                    )}
                                 </div>
                             ))}
                         </div>
-                        <p style={{ fontSize: '0.72rem', color: '#94A3B8', margin: '0.4rem 0 0' }}>
-                            Select the radio button next to the correct answer.
-                        </p>
                     </div>
 
-                    {/* Points + Difficulty */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
                         <div>
-                            <label style={{ display: 'block', marginBottom: 4, fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Points</label>
-                            <input
-                                className="input"
-                                type="number"
-                                min={1}
-                                max={100}
-                                value={question.points}
-                                onChange={(e) => onChange('points', parseInt(e.target.value) || 1)}
-                            />
+                            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Points Allocation</label>
+                            <input className="input" type="number" min={1} value={question.points} onChange={(e) => onChange('points', parseInt(e.target.value) || 1)} />
                         </div>
                         <div>
-                            <label style={{ display: 'block', marginBottom: 4, fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Difficulty</label>
-                            <select
-                                className="input"
-                                value={question.difficulty}
-                                onChange={(e) => onChange('difficulty', e.target.value)}
-                            >
-                                <option value="easy">Easy</option>
-                                <option value="medium">Medium</option>
-                                <option value="hard">Hard</option>
+                            <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Difficulty Level</label>
+                            <select className="input" value={question.difficulty} onChange={(e) => onChange('difficulty', e.target.value)}>
+                                <option value="easy">Beginner (Easy)</option>
+                                <option value="medium">Intermediate (Medium)</option>
+                                <option value="hard">Advanced (Hard)</option>
                             </select>
                         </div>
-                    </div>
-
-                    {/* Explanation (optional) */}
-                    <div>
-                        <label style={{ display: 'block', marginBottom: 4, fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
-                            Explanation <span style={{ fontWeight: 400, color: '#94A3B8' }}>(shown after exam)</span>
-                        </label>
-                        <input
-                            className="input"
-                            value={question.explanation}
-                            onChange={(e) => onChange('explanation', e.target.value)}
-                            placeholder="Why is this the correct answer?"
-                        />
                     </div>
                 </div>
             )}
@@ -218,7 +162,6 @@ function QuestionCard({ question, index, onChange, onRemove, collapsed, onToggle
     );
 }
 
-/* ─── Main Page ──────────────────────────────────────────────────────── */
 export default function CreateExam() {
     const navigate = useNavigate();
     const [saving, setSaving]     = useState(false);
@@ -237,7 +180,7 @@ export default function CreateExam() {
         proctoring:   { ...defaultProctoring },
     });
     const [organizations, setOrganizations] = useState([]);
-    const { user } = useAuth();
+    const user = useAuthStore(state => state.user);
 
     useEffect(() => {
         const fetchOrgs = async () => {
@@ -249,335 +192,164 @@ export default function CreateExam() {
         fetchOrgs();
     }, []);
 
-    /* ── Derived stats ─────────────────────────────────────────────── */
-    const totalMarks = useMemo(
-        () => form.questions.reduce((s, q) => s + (q.points || 1), 0),
-        [form.questions]
-    );
+    const totalMarks = useMemo(() => form.questions.reduce((s, q) => s + (q.points || 1), 0), [form.questions]);
+    const difficultyStats = useMemo(() => ({
+        easy:   form.questions.filter(q => q.difficulty === 'easy').length,
+        medium: form.questions.filter(q => q.difficulty === 'medium').length,
+        hard:   form.questions.filter(q => q.difficulty === 'hard').length,
+    }), [form.questions]);
 
-    const easyCount   = form.questions.filter((q) => q.difficulty === 'easy').length;
-    const mediumCount = form.questions.filter((q) => q.difficulty === 'medium').length;
-    const hardCount   = form.questions.filter((q) => q.difficulty === 'hard').length;
-
-    /* ── Form helpers ──────────────────────────────────────────────── */
-    const setField = (field, value) => setForm((p) => ({ ...p, [field]: value }));
-
-    const setProctoring = (field, value) =>
-        setForm((p) => ({ ...p, proctoring: { ...p.proctoring, [field]: value } }));
+    const setField = (field, value) => setForm(p => ({ ...p, [field]: value }));
+    const setProctoring = (field, value) => setForm(p => ({ ...p, proctoring: { ...p.proctoring, [field]: value } }));
 
     const addQuestion = () => {
         const q = defaultQuestion();
-        setForm((p) => ({ ...p, questions: [...p.questions, q] }));
-        // Auto-expand new question
-        setCollapsed((p) => ({ ...p, [form.questions.length]: false }));
+        setForm(p => ({ ...p, questions: [...p.questions, q] }));
+        setCollapsed(p => ({ ...p, [form.questions.length]: false }));
     };
 
-    const removeQuestion = (i) => {
-        setForm((p) => ({ ...p, questions: p.questions.filter((_, idx) => idx !== i) }));
-    };
-
+    const removeQuestion = (i) => setForm(p => ({ ...p, questions: p.questions.filter((_, idx) => idx !== i) }));
     const updateQuestion = (i, field, value) => {
-        setForm((p) => {
+        setForm(p => {
             const qs = [...p.questions];
             qs[i] = { ...qs[i], [field]: value };
             return { ...p, questions: qs };
         });
     };
 
-    const toggleCollapse = (i) => setCollapsed((p) => ({ ...p, [i]: !p[i] }));
-
-    /* ── Validation ────────────────────────────────────────────────── */
     const validate = () => {
         if (!form.title.trim()) { toast.error('Exam title is required.'); return false; }
-        if (form.duration < 5) { toast.error('Duration must be at least 5 minutes.'); return false; }
         if (form.questions.length === 0) { toast.error('Add at least one question.'); return false; }
-        for (let i = 0; i < form.questions.length; i++) {
-            const q = form.questions[i];
-            if (!q.questionText.trim()) { toast.error(`Question ${i + 1}: text is required.`); return false; }
-            if (q.options.some((o) => !o.text.trim())) { toast.error(`Question ${i + 1}: all options must have text.`); return false; }
-        }
         return true;
     };
 
-    /* ── Submit (save as draft) ────────────────────────────────────── */
-    const handleSave = async (e) => {
-        e?.preventDefault();
-        if (!form.title.trim()) { toast.error('Exam title is required.'); return; }
-        if (form.duration < 5)  { toast.error('Duration must be at least 5 minutes.'); return; }
+    const handleSave = async () => {
+        if (!form.title.trim()) return toast.error('Enter a title first.');
         setSaving(true);
         try {
-            const { data } = await examAPI.create({
-                ...form,
-                instructions: form.instructions
-                    ? form.instructions.split('\n').map((s) => s.trim()).filter(Boolean)
-                    : [],
-                status: 'draft',
-            });
-            toast.success('Exam saved as draft!');
+            await examAPI.create({ ...form, status: 'draft' });
+            toast.success('Draft saved successfully!');
             navigate('/exams');
-            return data.data._id;
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to save exam.');
-        } finally {
-            setSaving(false);
-        }
+        } catch (err) { toast.error('Save failed.'); }
+        finally { setSaving(false); }
     };
 
-    /* ── Publish ────────────────────────────────────────────────────── */
     const handlePublish = async () => {
         if (!validate()) return;
         setPublishing(true);
         try {
-            const { data: createData } = await examAPI.create({
-                ...form,
-                instructions: form.instructions
-                    ? form.instructions.split('\n').map((s) => s.trim()).filter(Boolean)
-                    : [],
-                status: 'draft',
-            });
-            const examId = createData.data._id;
-            await examAPI.publish(examId);
-            toast.success('Exam published successfully!');
+            const { data } = await examAPI.create({ ...form, status: 'draft' });
+            await examAPI.publish(data.data._id);
+            toast.success('Exam is now LIVE!');
             navigate('/exams');
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to publish exam.');
-        } finally {
-            setPublishing(false);
-        }
+        } catch (err) { toast.error('Publish failed.'); }
+        finally { setPublishing(false); }
     };
 
-    /* ── Render ─────────────────────────────────────────────────────── */
     return (
         <div style={{ display: 'flex' }}>
             <Sidebar />
             <main className="main-content">
-                <Navbar title="Create New Exam" />
+                <Navbar title="Exam Architect" />
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '1.5rem', maxWidth: 1100, margin: '0 auto' }}>
-
-                    {/* ── LEFT: Builder ─────────────────────────────── */}
-                    <div>
-                        {/* Exam Details */}
-                        <SectionCard title="Exam Details" icon={BookOpen}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                <div style={{ gridColumn: '1 / -1' }}>
-                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Title *</label>
-                                    <input
-                                        className="input"
-                                        required
-                                        value={form.title}
-                                        onChange={(e) => setField('title', e.target.value)}
-                                        placeholder="e.g. Midterm Physics Exam"
-                                    />
-                                </div>
-                                <div style={{ gridColumn: '1 / -1' }}>
-                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Description</label>
-                                    <textarea
-                                        className="input"
-                                        rows={2}
-                                        value={form.description}
-                                        onChange={(e) => setField('description', e.target.value)}
-                                        placeholder="Brief overview of the exam…"
-                                        style={{ resize: 'vertical' }}
-                                    />
-                                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2rem', maxWidth: 1200, margin: '0 auto' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <Section title="General Information" icon={Layout}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Duration (minutes) *</label>
-                                    <input
-                                        className="input"
-                                        type="number"
-                                        min={5}
-                                        value={form.duration}
-                                        onChange={(e) => setField('duration', parseInt(e.target.value) || 5)}
-                                    />
+                                    <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Title</label>
+                                    <input className="input" value={form.title} onChange={e => setField('title', e.target.value)} placeholder="e.g., Q1 Advanced Mathematics" style={{ height: '3rem', fontSize: '1rem', fontWeight: 600 }} />
                                 </div>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Passing Marks</label>
-                                    <input
-                                        className="input"
-                                        type="number"
-                                        min={0}
-                                        value={form.passingMarks}
-                                        onChange={(e) => setField('passingMarks', parseInt(e.target.value) || 0)}
-                                        placeholder={`out of ${totalMarks}`}
-                                    />
-                                </div>
-                                <div style={{ gridColumn: '1 / -1' }}>
-                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
-                                        Instructions <span style={{ fontWeight: 400, color: '#94A3B8' }}>(one per line)</span>
-                                    </label>
-                                    <textarea
-                                        className="input"
-                                        rows={3}
-                                        value={form.instructions}
-                                        onChange={(e) => setField('instructions', e.target.value)}
-                                        placeholder="No phones allowed.&#10;Submit before the timer ends.&#10;Ensure good lighting."
-                                        style={{ resize: 'vertical' }}
-                                    />
-                                </div>
-                            </div>
-                        </SectionCard>
-
-                        {/* Access Settings */}
-                        <SectionCard title="Access Settings" icon={Shield} accent="#8B5CF6">
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
-                                <div>
-                                    <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Access Level</label>
-                                    <select
-                                        className="input"
-                                        value={form.accessType}
-                                        onChange={(e) => {
-                                            setField('accessType', e.target.value);
-                                            // Reset organization when switching to public
-                                            if (e.target.value === 'public') setField('organization', '');
-                                            // Auto-select user's org if they switch to organization
-                                            if (e.target.value === 'organization' && user?.organization) {
-                                                setField('organization', user.organization);
-                                            }
-                                        }}
-                                    >
-                                        <option value="public">Public (All Access)</option>
-                                        <option value="organization">Organization Only</option>
-                                    </select>
-                                </div>
-                                {form.accessType === 'organization' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: 4, fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Select Organization</label>
-                                        <select
-                                            className="input"
-                                            value={form.organization}
-                                            onChange={(e) => setField('organization', e.target.value)}
-                                        >
-                                            <option value="">-- Choose an Organization --</option>
-                                            {organizations.map(org => (
-                                                <option key={org._id} value={org._id}>{org.name}</option>
-                                            ))}
-                                        </select>
+                                        <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Duration (Minutes)</label>
+                                        <div style={{ position: 'relative' }}>
+                                            <input className="input" type="number" min={5} value={form.duration} onChange={e => setField('duration', parseInt(e.target.value) || 5)} style={{ paddingLeft: '2.5rem' }} />
+                                            <Clock size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
+                                        </div>
                                     </div>
-                                )}
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Passing Score</label>
+                                        <div style={{ position: 'relative' }}>
+                                            <input className="input" type="number" min={0} value={form.passingMarks} onChange={e => setField('passingMarks', parseInt(e.target.value) || 0)} style={{ paddingLeft: '2.5rem' }} />
+                                            <Award size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Instructions</label>
+                                    <textarea className="input" rows={3} value={form.instructions} onChange={e => setField('instructions', e.target.value)} placeholder="Rules and guidelines for candidates..." />
+                                </div>
                             </div>
-                        </SectionCard>
+                        </Section>
 
-                        {/* Proctoring Config */}
-                        <SectionCard title="Proctoring Settings" icon={Shield} accent="#6366F1">
-                            <Toggle
-                                label="Enable Proctoring"
-                                description="Activate all AI monitoring for this exam"
-                                checked={form.proctoring.enabled}
-                                onChange={() => setProctoring('enabled', !form.proctoring.enabled)}
-                            />
+                        <Section title="Proctoring Framework" icon={Shield} badge="Security Core v4.2">
+                            <div style={{ marginBottom: '1.25rem' }}>
+                                <CustomToggle label="Enable Master Proctoring" description="Activate the AI-based monitoring suite" checked={form.proctoring.enabled} onChange={() => setProctoring('enabled', !form.proctoring.enabled)} />
+                            </div>
                             {form.proctoring.enabled && (
-                                <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #F1F5F9', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem 1.5rem' }}>
-                                    <Toggle label="Webcam Required"      checked={form.proctoring.webcamRequired}      onChange={() => setProctoring('webcamRequired',      !form.proctoring.webcamRequired)} />
-                                    <Toggle label="Fullscreen Required"  checked={form.proctoring.fullscreenRequired}  onChange={() => setProctoring('fullscreenRequired',  !form.proctoring.fullscreenRequired)} />
-                                    <Toggle label="Face Detection"       checked={form.proctoring.faceDetection}       onChange={() => setProctoring('faceDetection',       !form.proctoring.faceDetection)} />
-                                    <Toggle label="Deepfake Detection"   checked={form.proctoring.deepfakeDetection}   onChange={() => setProctoring('deepfakeDetection',   !form.proctoring.deepfakeDetection)} />
-                                    <Toggle label="Behavioral Biometrics" checked={form.proctoring.behavioralBiometrics} onChange={() => setProctoring('behavioralBiometrics', !form.proctoring.behavioralBiometrics)} />
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: 4, marginTop: '0.5rem', fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>Tab Switch Limit</label>
-                                        <input
-                                            className="input"
-                                            type="number"
-                                            min={1}
-                                            max={10}
-                                            value={form.proctoring.tabSwitchLimit}
-                                            onChange={(e) => setProctoring('tabSwitchLimit', parseInt(e.target.value) || 3)}
-                                            style={{ width: 80 }}
-                                        />
-                                    </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    <CustomToggle label="Liveness Check" checked={form.proctoring.faceDetection} onChange={() => setProctoring('faceDetection', !form.proctoring.faceDetection)} />
+                                    <CustomToggle label="Full Screen Mode" checked={form.proctoring.fullscreenRequired} onChange={() => setProctoring('fullscreenRequired', !form.proctoring.fullscreenRequired)} />
+                                    <CustomToggle label="Deepfake Shield" checked={form.proctoring.deepfakeDetection} onChange={() => setProctoring('deepfakeDetection', !form.proctoring.deepfakeDetection)} />
+                                    <CustomToggle label="Behavioral AI" checked={form.proctoring.behavioralBiometrics} onChange={() => setProctoring('behavioralBiometrics', !form.proctoring.behavioralBiometrics)} />
                                 </div>
                             )}
-                        </SectionCard>
+                        </Section>
 
-                        {/* Question Builder */}
-                        <SectionCard title={`Questions (${form.questions.length})`} icon={Target} accent="#22C55E">
-                            {form.questions.length === 0 && (
-                                <div style={{ textAlign: 'center', padding: '2rem 0', color: '#94A3B8', fontSize: '0.875rem' }}>
-                                    No questions yet. Click "Add Question" to begin.
-                                </div>
-                            )}
-                            {form.questions.map((q, i) => (
-                                <QuestionCard
-                                    key={i}
-                                    question={q}
-                                    index={i}
-                                    collapsed={collapsed[i] !== false}
-                                    onToggleCollapse={() => toggleCollapse(i)}
-                                    onChange={(field, value) => updateQuestion(i, field, value)}
-                                    onRemove={() => removeQuestion(i)}
-                                />
-                            ))}
-                            <button type="button" className="btn-secondary" onClick={addQuestion} style={{ width: '100%', justifyContent: 'center' }}>
-                                <Plus size={16} /> Add Question
-                            </button>
-                        </SectionCard>
+                        <Section title={`Question Library (${form.questions.length})`} icon={Target}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {form.questions.map((q, i) => (
+                                    <QuestionCard key={i} question={q} index={i} collapsed={collapsed[i] !== false} onToggleCollapse={() => setCollapsed(p => ({ ...p, [i]: !p[i] }))} onChange={(f, v) => updateQuestion(i, f, v)} onRemove={() => removeQuestion(i)} />
+                                ))}
+                                <button type="button" className="btn btn-secondary btn-lg" onClick={addQuestion} style={{ width: '100%', borderStyle: 'dashed', background: 'transparent' }}>
+                                    <Plus size={20} /> Add New Question
+                                </button>
+                            </div>
+                        </Section>
                     </div>
 
-                    {/* ── RIGHT: Preview Panel ───────────────────────── */}
-                    <div>
-                        <div style={{ position: 'sticky', top: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            {/* Stats card */}
-                            <div className="card animate-fade-up">
-                                <h4 style={{ margin: '0 0 1rem', fontSize: '0.9rem', fontWeight: 600, color: '#1E293B' }}>Exam Preview</h4>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                    {[
-                                        { label: 'Questions',     value: form.questions.length },
-                                        { label: 'Total Marks',   value: totalMarks },
-                                        { label: 'Passing Marks', value: form.passingMarks || '—' },
-                                        { label: 'Duration',      value: `${form.duration} min` },
-                                        { label: 'Pass Rate',     value: totalMarks > 0 && form.passingMarks > 0 ? `${Math.round((form.passingMarks / totalMarks) * 100)}%` : '—' },
-                                    ].map(({ label, value }) => (
-                                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
-                                            <span style={{ color: '#64748B' }}>{label}</span>
-                                            <span style={{ fontWeight: 600, color: '#1E293B' }}>{value}</span>
-                                        </div>
-                                    ))}
+                    <div style={{ position: 'sticky', top: '2rem', height: 'fit-content', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div className="card">
+                            <h4 style={{ margin: '0 0 1.25rem', fontSize: '0.9rem', fontWeight: 800, color: 'var(--n-900)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Summary Preview</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--n-500)' }}><Target size={14}/> Total Marks</div>
+                                    <div style={{ fontWeight: 800, color: 'var(--n-900)' }}>{totalMarks}</div>
                                 </div>
-
-                                {form.questions.length > 0 && (
-                                    <>
-                                        <div className="divider" />
-                                        <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.5rem' }}>Difficulty Breakdown</div>
-                                        {[
-                                            { label: 'Easy',   count: easyCount,   color: '#22C55E' },
-                                            { label: 'Medium', count: mediumCount, color: '#F59E0B' },
-                                            { label: 'Hard',   count: hardCount,   color: '#EF4444' },
-                                        ].map(({ label, count, color }) => (
-                                            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
-                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                                                <span style={{ flex: 1, fontSize: '0.78rem', color: '#64748B' }}>{label}</span>
-                                                <span style={{ fontSize: '0.78rem', fontWeight: 600, color }}>{count}</span>
-                                            </div>
-                                        ))}
-                                    </>
-                                )}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', color: 'var(--n-500)' }}><Clock size={14}/> Duration</div>
+                                    <div style={{ fontWeight: 800, color: 'var(--n-900)' }}>{form.duration}m</div>
+                                </div>
+                                <div style={{ margin: '0.5rem 0', borderTop: '1px solid var(--border)' }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                        <span style={{ color: 'var(--success)', fontWeight: 700 }}>Beginner</span>
+                                        <span style={{ color: 'var(--n-900)', fontWeight: 800 }}>{difficultyStats.easy}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                        <span style={{ color: 'var(--warning)', fontWeight: 700 }}>Intermediate</span>
+                                        <span style={{ color: 'var(--n-900)', fontWeight: 800 }}>{difficultyStats.medium}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                        <span style={{ color: 'var(--danger)', fontWeight: 700 }}>Advanced</span>
+                                        <span style={{ color: 'var(--n-900)', fontWeight: 800 }}>{difficultyStats.hard}</span>
+                                    </div>
+                                </div>
                             </div>
-
-                            {/* Action buttons */}
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={handleSave}
-                                disabled={saving || publishing}
-                                style={{ width: '100%', justifyContent: 'center' }}
-                            >
-                                <Save size={16} /> {saving ? 'Saving…' : 'Save as Draft'}
-                            </button>
-                            <button
-                                type="button"
-                                className="btn-primary"
-                                onClick={handlePublish}
-                                disabled={saving || publishing || form.questions.length === 0}
-                                style={{ width: '100%', justifyContent: 'center' }}
-                            >
-                                <Send size={16} /> {publishing ? 'Publishing…' : 'Save & Publish'}
-                            </button>
-                            {form.questions.length === 0 && (
-                                <p style={{ fontSize: '0.72rem', color: '#94A3B8', textAlign: 'center', margin: 0 }}>
-                                    Add at least 1 question to publish.
-                                </p>
-                            )}
                         </div>
+
+                        <button className="btn btn-secondary btn-lg" onClick={handleSave} disabled={saving} style={{ width: '100%', justifyContent: 'center' }}>
+                            <Save size={20} /> {saving ? 'Saving...' : 'Save Draft'}
+                        </button>
+                        <button className="btn btn-primary btn-lg" onClick={handlePublish} disabled={publishing || !form.questions.length} style={{ width: '100%', justifyContent: 'center' }}>
+                            <Send size={20} /> {publishing ? 'Publishing...' : 'Go Live Now'}
+                        </button>
+                        {!form.questions.length && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '0.75rem', borderRadius: 8, background: 'var(--n-50)', color: 'var(--n-500)', fontSize: '0.7rem' }}>
+                                <AlertCircle size={14} /> Add questions to enable publishing.
+                            </div>
+                        )}
                     </div>
                 </div>
             </main>

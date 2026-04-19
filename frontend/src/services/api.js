@@ -3,23 +3,30 @@
  * ─────────────────────────────────────────────────────────────────────────
  * Centralised Axios instance for HawkWatch.
  *
- *  • Attaches JWT access token to every request
+ *  • Attaches JWT access token to every request from Zustand store
+ *  • Exponential backoff retry mechanism
  *  • On 401: attempts silent token refresh once, then retries
  *  • On double-401: clears auth and redirects to /login
- *  • Exposes typed sub-APIs: authAPI, examAPI, proctoringAPI
  * ─────────────────────────────────────────────────────────────────────────
  */
 
 import axios from 'axios';
 
-/* ─── Storage keys (must match AuthContext.jsx) ─────────────────────── */
-const KEYS = {
-    token:   'hawkwatch_token',
-    refresh: 'hawkwatch_refresh',
-    user:    'hawkwatch_user',
+/* ─── Storage retrieval ─────────────────────────────────────────────── */
+const getAuthData = () => {
+    try {
+        const authStorage = localStorage.getItem('hawkwatch-auth');
+        if (!authStorage) return null;
+        return JSON.parse(authStorage).state;
+    } catch (e) {
+        return null;
+    }
 };
 
-const clearAuth = () => Object.values(KEYS).forEach(k => localStorage.removeItem(k));
+const clearAuth = () => {
+    localStorage.removeItem('hawkwatch-auth');
+    window.location.href = '/login';
+};
 
 /* ─── Axios instance ────────────────────────────────────────────────── */
 const api = axios.create({
@@ -31,16 +38,18 @@ const api = axios.create({
 /* ─── Request interceptor — attach Bearer token ─────────────────────── */
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem(KEYS.token);
-        if (token) config.headers.Authorization = `Bearer ${token}`;
+        const auth = getAuthData();
+        if (auth?.token) {
+            config.headers.Authorization = `Bearer ${auth.token}`;
+        }
         return config;
     },
     (error) => Promise.reject(error)
 );
 
-/* ─── Response interceptor — silent token refresh on 401 ────────────── */
-let _refreshing   = false;           // lock: only one refresh at a time
-let _waitQueue     = [];             // requests queued while refresh is in flight
+/* ─── Retry logic and Token Refresh ─────────────────────────────────── */
+let _refreshing = false;
+let _waitQueue = [];
 
 const processQueue = (error, newToken = null) => {
     _waitQueue.forEach(({ resolve, reject }) =>
@@ -54,55 +63,74 @@ api.interceptors.response.use(
     async (error) => {
         const original = error.config;
 
-        // Only intercept 401s that aren't already from the refresh endpoint,
-        // and haven't already been retried.
-        const is401          = error.response?.status === 401;
-        const isRefreshCall  = original.url?.includes('/auth/refresh');
-        const alreadyRetried = original._retry;
+        // Ensure retry config
+        original._retryCount = original._retryCount || 0;
 
-        if (!is401 || isRefreshCall || alreadyRetried) {
-            return Promise.reject(error);
-        }
+        const is401 = error.response?.status === 401;
+        const isRefreshCall = original.url?.includes('/auth/refresh');
+        
+        // 1. Handle 401 Unauthorized (Token Refresh Flow)
+        if (is401 && !isRefreshCall && !original._isRetryForAuth) {
+            const auth = getAuthData();
+            if (!auth?.refreshToken) {
+                clearAuth();
+                return Promise.reject(error);
+            }
 
-        const refreshToken = localStorage.getItem(KEYS.refresh);
-        if (!refreshToken) {
-            clearAuth();
-            window.location.href = '/login';
-            return Promise.reject(error);
-        }
+            if (_refreshing) {
+                return new Promise((resolve, reject) => {
+                    _waitQueue.push({ resolve, reject });
+                }).then((newToken) => {
+                    original.headers.Authorization = `Bearer ${newToken}`;
+                    return api(original);
+                }).catch(err => Promise.reject(err));
+            }
 
-        // Queue subsequent 401s while a refresh is already in-flight
-        if (_refreshing) {
-            return new Promise((resolve, reject) => {
-                _waitQueue.push({ resolve, reject });
-            }).then((newToken) => {
+            _refreshing = true;
+            original._isRetryForAuth = true;
+
+            try {
+                const { data } = await axios.post('/api/auth/refresh', { refreshToken: auth.refreshToken });
+                
+                // Update Zustand persist storage manually
+                const currentStorage = JSON.parse(localStorage.getItem('hawkwatch-auth'));
+                currentStorage.state.token = data.data?.accessToken || data.accessToken;
+                currentStorage.state.refreshToken = data.data?.refreshToken || data.refreshToken;
+                localStorage.setItem('hawkwatch-auth', JSON.stringify(currentStorage));
+
+                const newToken = currentStorage.state.token;
+                api.defaults.headers.common.Authorization = `Bearer ${newToken}`;
                 original.headers.Authorization = `Bearer ${newToken}`;
+
+                processQueue(null, newToken);
                 return api(original);
+            } catch (refreshError) {
+                processQueue(refreshError);
+                clearAuth();
+                return Promise.reject(refreshError);
+            } finally {
+                _refreshing = false;
+            }
+        }
+
+        // 2. Exponential Backoff Retry for 5xx or Network Errors
+        const shouldRetry = (!error.response || error.response.status >= 500) && original._retryCount < 3;
+        if (shouldRetry) {
+            original._retryCount += 1;
+            const backoff = Math.pow(2, original._retryCount) * 1000; // 2s, 4s, 8s
+            
+            return new Promise(resolve => {
+                setTimeout(() => resolve(api(original)), backoff);
             });
         }
 
-        _refreshing     = true;
-        original._retry = true;
-
-        try {
-            const { data } = await api.post('/auth/refresh', { refreshToken });
-
-            localStorage.setItem(KEYS.token,   data.accessToken);
-            localStorage.setItem(KEYS.refresh, data.refreshToken);
-
-            api.defaults.headers.common.Authorization = `Bearer ${data.accessToken}`;
-            original.headers.Authorization            = `Bearer ${data.accessToken}`;
-
-            processQueue(null, data.accessToken);
-            return api(original);
-        } catch (refreshError) {
-            processQueue(refreshError);
-            clearAuth();
-            window.location.href = '/login';
-            return Promise.reject(refreshError);
-        } finally {
-            _refreshing = false;
-        }
+        // Standardize error format
+        const errorMsg = error.response?.data?.message || error.message || 'An unexpected error occurred';
+        return Promise.reject({
+            success: false,
+            error: errorMsg,
+            status: error.response?.status
+        });
     }
 );
 
@@ -134,7 +162,6 @@ export const proctoringAPI = {
     endSession:      (sessionId)            => api.post(`/proctoring/${sessionId}/end`),
     flagEvent:       (sessionId, data)      => api.post(`/proctoring/${sessionId}/flag`,           data),
     analyzeFrame:    (sessionId, frameB64)  => api.post(`/proctoring/${sessionId}/analyze-frame`,  { frameBase64: frameB64, timestamp: Date.now() }),
-    updateBehavioral:(sessionId, data)      => api.post(`/proctoring/${sessionId}/behavioral`,     data),
     updateBehavioral:(sessionId, data)      => api.post(`/proctoring/${sessionId}/behavioral`,     data),
     getReport:       (sessionId)            => api.get (`/proctoring/${sessionId}/report`),
     submitReview:    (sessionId, data)      => api.patch(`/proctoring/${sessionId}/review`, data),

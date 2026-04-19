@@ -18,14 +18,15 @@
  */
 
 const jwt = require('jsonwebtoken');
+const config = require('../config');
 
 /** @returns {string} The access-token signing secret */
 const accessSecret = () =>
-    process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+    config.auth.jwtAccessSecret || config.auth.jwtSecret;
 
 /** @returns {string} The refresh-token signing secret */
 const refreshSecret = () =>
-    process.env.JWT_REFRESH_SECRET;
+    config.auth.jwtRefreshSecret;
 
 /**
  * Generate a short-lived JWT access token.
@@ -44,7 +45,7 @@ const generateAccessToken = (userId, role) => {
     return jwt.sign(
         { id: userId.toString(), role },
         secret,
-        { expiresIn: '15m' }
+        { expiresIn: config.auth.jwtExpire || '15m' }
     );
 };
 
@@ -64,16 +65,12 @@ const generateRefreshToken = (userId) => {
     return jwt.sign(
         { id: userId.toString() },
         secret,
-        { expiresIn: '7d' }
+        { expiresIn: config.auth.jwtRefreshExpire || '7d' }
     );
 };
 
 /**
  * Verify a JWT (access or refresh) and return its decoded payload.
- *
- * The caller is responsible for passing the correct secret — use
- * `process.env.JWT_ACCESS_SECRET` for access tokens and
- * `process.env.JWT_REFRESH_SECRET` for refresh tokens.
  *
  * @param {string} token  - The raw JWT string
  * @param {'access'|'refresh'} [type='access'] - Which secret to use

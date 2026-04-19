@@ -1,62 +1,54 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, AlertTriangle, CheckCircle, Activity } from 'lucide-react';
+import { CameraOff, AlertTriangle, CheckCircle, Activity, ShieldCheck, Eye } from 'lucide-react';
 import { proctoringAPI } from '../services/api';
-import { io } from 'socket.io-client';
+import useProctoringStore from '../store/proctoringStore';
+import useAuthStore from '../store/authStore';
 
 const FRAME_INTERVAL_MS = 5000;
 const BEHAVIORAL_INTERVAL_MS = 60000;
 
-const flagSeverityStyle = {
-    low: { background: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0' },
-    medium: { background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' },
-    high: { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' },
-    critical: { background: '#FEF2F2', color: '#DC2626', border: '1px solid #EF4444', fontWeight: 700 },
+const SEVERITY_CONFIG = {
+    low:      { color: '#10B981', bg: '#ECFDF5' },
+    medium:   { color: '#F59E0B', bg: '#FFFBEB' },
+    high:     { color: '#F97316', bg: '#FFF7ED' },
+    critical: { color: '#EF4444', bg: '#FEF2F2' },
 };
 
 export default function ProctoringOverlay({ sessionId, examId, onSessionTerminated }) {
-    const videoRef = useRef(null);
+    const videoRef  = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
-    const socketRef = useRef(null);
 
-    const [camStatus, setCamStatus] = useState('requesting');
-    const [alerts, setAlerts] = useState([]);
-    const [riskScore, setRiskScore] = useState(0);
+    const token          = useAuthStore(s => s.token);
+    const connectSocket  = useProctoringStore(s => s.connectSocket);
+    const disconnectSocket = useProctoringStore(s => s.disconnectSocket);
+    const socket         = useProctoringStore(s => s.socket);
+    const storeFlags     = useProctoringStore(s => s.flags);
+    const storeRiskScore = useProctoringStore(s => s.riskScore);
+    const setRiskScore   = useProctoringStore(s => s.setRiskScore);
+    const addFlag        = useProctoringStore(s => s.addFlag);
+
+    const [camStatus,   setCamStatus]   = useState('requesting');
     const [faceDetected, setFaceDetected] = useState(true);
-    const [deepfakeScore, setDeepfakeScore] = useState(0);
-    const [framesAnalyzed, setFramesAnalyzed] = useState(0);
-    const [tabSwitches, setTabSwitches] = useState(0);
+    const [minimized,   setMinimized]   = useState(false);
 
-    // ── Socket.IO Connection ─────────────────────────
+    // Socket
     useEffect(() => {
-        const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
-        socketRef.current = socket;
-        if (sessionId) {
-            socket.emit('join-session', { sessionId });
-        }
-        return () => {
-            socket.disconnect();
-        };
-    }, [sessionId]);
+        if (token && sessionId) connectSocket(token, 'student', sessionId);
+        return () => disconnectSocket();
+    }, [token, sessionId, connectSocket, disconnectSocket]);
 
     const dispatchFlag = useCallback((flagPayload) => {
         if (!sessionId) return;
-        proctoringAPI.flagEvent(sessionId, flagPayload).then((res) => {
-            if (res.data?.riskScore > 75) {
-                onSessionTerminated?.();
-            }
+        proctoringAPI.flagEvent(sessionId, flagPayload).then(res => {
+            if (res.data?.riskScore) setRiskScore(res.data.riskScore);
+            if (res.data?.riskScore > 75) onSessionTerminated?.();
         }).catch(() => {});
-        if (socketRef.current) {
-            socketRef.current.emit('proctor-event', {
-                sessionId,
-                eventType: flagPayload.type,
-                data: flagPayload
-            });
-        }
-        setAlerts(p => [{ id: Date.now() + Math.random(), text: `${flagPayload.type} detected`, severity: flagPayload.severity }, ...p].slice(0, 5));
-    }, [sessionId, onSessionTerminated]);
+        if (socket) socket.emit('proctor-event', { sessionId, eventType: flagPayload.type, data: flagPayload });
+        addFlag({ id: Date.now() + Math.random(), text: String(flagPayload.type).replace(/_/g, ' '), severity: flagPayload.severity });
+    }, [sessionId, onSessionTerminated, socket, setRiskScore, addFlag]);
 
-    // ── Camera ───────────────────────────────────────
+    // Camera
     useEffect(() => {
         const startCam = async () => {
             try {
@@ -66,44 +58,35 @@ export default function ProctoringOverlay({ sessionId, examId, onSessionTerminat
                 setCamStatus('active');
             } catch {
                 setCamStatus('denied');
-                dispatchFlag({ type: 'face_not_detected', severity: 'critical', confidence: 1.0 });
+                dispatchFlag({ type: 'camera_blocked', severity: 'critical', confidence: 1.0 });
             }
         };
         startCam();
-        return () => streamRef.current?.getTracks().forEach((t) => t.stop());
+        return () => streamRef.current?.getTracks().forEach(t => t.stop());
     }, [dispatchFlag]);
 
-    // ── Frame capture ────────────────────────────────
+    // Frame analysis
     const captureAndAnalyze = useCallback(async () => {
         if (!videoRef.current || !canvasRef.current || !sessionId) return;
-        const c = canvasRef.current;
-        const v = videoRef.current;
+        const v = videoRef.current, c = canvasRef.current;
         if (v.videoWidth === 0) return;
-        
-        c.width = v.videoWidth;
-        c.height = v.videoHeight;
+        c.width = v.videoWidth; c.height = v.videoHeight;
         c.getContext('2d').drawImage(v, 0, 0);
         const frameB64 = c.toDataURL('image/jpeg', 0.7).split(',')[1];
-
         try {
             const { data } = await proctoringAPI.analyzeFrame(sessionId, frameB64);
-            const r = data.result;
-            if (r) {
-                setFaceDetected(r.faceDetected);
-                setDeepfakeScore(r.deepfakeScore ?? 0);
-            }
-            setFramesAnalyzed((n) => n + 1);
+            if (data.result) setFaceDetected(data.result.faceDetected ?? true);
             if (data.riskScore) {
                 setRiskScore(data.riskScore);
                 if (data.riskScore > 75) onSessionTerminated?.('Exceeded flag threshold');
             }
-
             if (data.flagsGenerated > 0) {
-                const sev = (r && r.deepfakeScore > 0.6) ? 'critical' : (r && r.multipleFaces) ? 'high' : 'medium';
-                setAlerts((p) => [{ id: Date.now(), text: `Flag: ${data.flagsGenerated} AI event(s) detected`, severity: sev }, ...p].slice(0, 5));
+                const r = data.result;
+                const sev = (r?.deepfakeScore > 0.6) ? 'critical' : (r?.multipleFaces) ? 'high' : 'medium';
+                addFlag({ id: Date.now(), text: `${data.flagsGenerated} AI event(s) detected`, severity: sev });
             }
-        } catch { /* network issue — continue */ }
-    }, [sessionId, onSessionTerminated]);
+        } catch { /* non-fatal */ }
+    }, [sessionId, onSessionTerminated, setRiskScore, addFlag]);
 
     useEffect(() => {
         if (camStatus !== 'active' || !sessionId) return;
@@ -111,217 +94,181 @@ export default function ProctoringOverlay({ sessionId, examId, onSessionTerminat
         return () => clearInterval(interval);
     }, [camStatus, sessionId, captureAndAnalyze]);
 
-
-    // ── Tab switch & Window focus ────────────────────
+    // Tab / focus detection
     useEffect(() => {
-        const handleVis = () => {
-            if (document.hidden) {
-                setTabSwitches((n) => {
-                    const next = n + 1;
-                    if (next > 3) dispatchFlag({ type: 'tab_switch', severity: 'critical', confidence: 1.0 }); // Adjust to logic later if needed
-                    return next;
-                });
-                dispatchFlag({ type: 'tab_switch', severity: 'high', confidence: 1.0 });
-            }
-        };
-        const handleBlur = () => {
-            dispatchFlag({ type: 'tab_switch', severity: 'high', confidence: 1.0 });
-        };
+        const handleVis  = () => { if (document.hidden) dispatchFlag({ type: 'tab_switch', severity: 'high', confidence: 1.0 }); };
+        const handleBlur = () => dispatchFlag({ type: 'window_blur', severity: 'medium', confidence: 1.0 });
         document.addEventListener('visibilitychange', handleVis);
         window.addEventListener('blur', handleBlur);
-        return () => {
-            document.removeEventListener('visibilitychange', handleVis);
-            window.removeEventListener('blur', handleBlur);
-        };
+        return () => { document.removeEventListener('visibilitychange', handleVis); window.removeEventListener('blur', handleBlur); };
     }, [dispatchFlag]);
 
-    // ── Fullscreen enforcement ───────────────────────
+    // Fullscreen
     useEffect(() => {
         document.documentElement.requestFullscreen().catch(() => {});
-        const handleFC = () => {
-            if (!document.fullscreenElement) {
-                dispatchFlag({ type: 'fullscreen_exit', severity: 'high', confidence: 1.0 });
-            }
-        };
-        document.addEventListener('fullscreenchange', handleFC);
-        return () => document.removeEventListener('fullscreenchange', handleFC);
+        const h = () => { if (!document.fullscreenElement) dispatchFlag({ type: 'fullscreen_exit', severity: 'high', confidence: 1.0 }); };
+        document.addEventListener('fullscreenchange', h);
+        return () => document.removeEventListener('fullscreenchange', h);
     }, [dispatchFlag]);
 
-    // ── Copy/Paste & Keyboard Restrictions ───────────
+    // Copy/paste/keys
     useEffect(() => {
-        const blockEvent = (e) => {
-            e.preventDefault();
-            dispatchFlag({ type: 'copy_paste', severity: 'medium', confidence: 1.0 });
-        };
-        const blockKeys = (e) => {
-            if (e.key === 'F12' || 
-               (e.ctrlKey && ['c','v','a','C','V','A'].includes(e.key)) ||
-               (e.ctrlKey && e.shiftKey && ['i','I'].includes(e.key))) {
+        const block = e => { e.preventDefault(); dispatchFlag({ type: 'copy_paste', severity: 'medium', confidence: 1.0 }); };
+        const blockKeys = e => {
+            if (e.key === 'F12' || (e.ctrlKey && ['c','v','a','C','V','A'].includes(e.key)) || (e.ctrlKey && e.shiftKey && ['i','I'].includes(e.key))) {
                 e.preventDefault();
-                dispatchFlag({ type: 'keyboard_shortcut', severity: 'medium', confidence: 1.0 });
+                dispatchFlag({ type: 'dev_tools', severity: 'medium', confidence: 1.0 });
             }
         };
-        
-        document.addEventListener('copy', blockEvent);
-        document.addEventListener('paste', blockEvent);
+        document.addEventListener('copy', block);
+        document.addEventListener('paste', block);
         document.addEventListener('keydown', blockKeys);
-        return () => {
-            document.removeEventListener('copy', blockEvent);
-            document.removeEventListener('paste', blockEvent);
-            document.removeEventListener('keydown', blockKeys);
-        };
+        return () => { document.removeEventListener('copy', block); document.removeEventListener('paste', block); document.removeEventListener('keydown', blockKeys); };
     }, [dispatchFlag]);
 
-    // ── Behavioral Biometrics ────────────────────────
-    const behaviorRef = useRef({
-        dwellTimes: [],
-        flightTimes: [],
-        lastKeyDownMap: new Map(), // needed since hold down keys fire multiple keydowns
-        lastKeyUpTime: null,
-        mouseDistance: 0,
-        mouseSpeeds: [],
-        lastMousePos: null,
-        lastMouseTime: null,
-        mouseCurvature: 0
-    });
-
+    // Behavioral biometrics
+    const bRef = useRef({ dwellTimes: [], flightTimes: [], lastKeyDownMap: new Map(), lastKeyUpTime: null, mouseDistance: 0, mouseSpeeds: [], lastMousePos: null, lastMouseTime: null });
     useEffect(() => {
-        const handleKeyDown = (e) => {
+        const kd = e => {
             const now = Date.now();
-            if (!behaviorRef.current.lastKeyDownMap.has(e.code)) {
-                behaviorRef.current.lastKeyDownMap.set(e.code, now);
-            }
-            if (behaviorRef.current.lastKeyUpTime) {
-                behaviorRef.current.flightTimes.push(now - behaviorRef.current.lastKeyUpTime);
-            }
+            if (!bRef.current.lastKeyDownMap.has(e.code)) bRef.current.lastKeyDownMap.set(e.code, now);
+            if (bRef.current.lastKeyUpTime) bRef.current.flightTimes.push(now - bRef.current.lastKeyUpTime);
         };
-
-        const handleKeyUp = (e) => {
-            const now = Date.now();
-            const downTime = behaviorRef.current.lastKeyDownMap.get(e.code);
-            if (downTime) {
-                behaviorRef.current.dwellTimes.push(now - downTime);
-                behaviorRef.current.lastKeyDownMap.delete(e.code);
-            }
-            behaviorRef.current.lastKeyUpTime = now;
+        const ku = e => {
+            const now = Date.now(), d = bRef.current.lastKeyDownMap.get(e.code);
+            if (d) { bRef.current.dwellTimes.push(now - d); bRef.current.lastKeyDownMap.delete(e.code); }
+            bRef.current.lastKeyUpTime = now;
         };
-
-        const handleMouseMove = (e) => {
-            const now = Date.now();
-            const { clientX, clientY } = e;
-            const state = behaviorRef.current;
-            if (state.lastMousePos) {
-                const dx = clientX - state.lastMousePos.x;
-                const dy = clientY - state.lastMousePos.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                state.mouseDistance += dist;
-                const dt = Math.max(1, now - state.lastMouseTime);
-                state.mouseSpeeds.push(dist / dt);
-                
-                // pseudo-curvature as proxy
-                state.mouseCurvature += Math.abs(dx * dy) > 0 ? 0.05 : 0;
+        const mm = e => {
+            const now = Date.now(), { clientX: x, clientY: y } = e, s = bRef.current;
+            if (s.lastMousePos) {
+                const dx = x - s.lastMousePos.x, dy = y - s.lastMousePos.y;
+                s.mouseDistance += Math.sqrt(dx*dx + dy*dy);
+                s.mouseSpeeds.push(Math.sqrt(dx*dx + dy*dy) / Math.max(1, now - s.lastMouseTime));
             }
-            state.lastMousePos = { x: clientX, y: clientY };
-            state.lastMouseTime = now;
+            s.lastMousePos = { x, y }; s.lastMouseTime = now;
         };
-
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('keyup', handleKeyUp);
-        window.addEventListener('mousemove', handleMouseMove);
-
-        const uploadId = setInterval(() => {
-            const b = behaviorRef.current;
-            const avgDwell = b.dwellTimes.length ? b.dwellTimes.reduce((x, y) => x + y, 0) / b.dwellTimes.length : 0;
-            const avgFlight = b.flightTimes.length ? b.flightTimes.reduce((x, y) => x + y, 0) / b.flightTimes.length : 0;
-            const avgSpeed = b.mouseSpeeds.length ? b.mouseSpeeds.reduce((x, y) => x + y, 0) / b.mouseSpeeds.length : 0;
-            
+        window.addEventListener('keydown', kd);
+        window.addEventListener('keyup', ku);
+        window.addEventListener('mousemove', mm);
+        const id = setInterval(() => {
+            const b = bRef.current;
+            const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : 0;
             if (sessionId && (b.dwellTimes.length > 0 || b.mouseSpeeds.length > 0)) {
                 proctoringAPI.updateBehavioral(sessionId, {
-                    typingRhythm: {
-                        avgDwellTime: avgDwell,
-                        avgFlightTime: avgFlight,
-                        keyPressCount: b.dwellTimes.length
-                    },
-                    mouseDynamics: {
-                        avgSpeed,
-                        curvatureIndex: b.mouseCurvature,
-                        totalDistance: b.mouseDistance
-                    }
+                    typingRhythm: { avgDwellTime: avg(b.dwellTimes), avgFlightTime: avg(b.flightTimes), keyPressCount: b.dwellTimes.length },
+                    mouseDynamics: { avgSpeed: avg(b.mouseSpeeds), totalDistance: b.mouseDistance },
                 }).catch(() => {});
             }
-
-            // clear buffer
-            behaviorRef.current = {
-                dwellTimes: [],
-                flightTimes: [],
-                lastKeyDownMap: new Map(),
-                lastKeyUpTime: null,
-                mouseDistance: 0,
-                mouseSpeeds: [],
-                lastMousePos: null,
-                lastMouseTime: null,
-                mouseCurvature: 0
-            };
-
+            bRef.current = { dwellTimes: [], flightTimes: [], lastKeyDownMap: new Map(), lastKeyUpTime: null, mouseDistance: 0, mouseSpeeds: [], lastMousePos: null, lastMouseTime: null };
         }, BEHAVIORAL_INTERVAL_MS);
-
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-            window.removeEventListener('keyup', handleKeyUp);
-            window.removeEventListener('mousemove', handleMouseMove);
-            clearInterval(uploadId);
-        };
+        return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); window.removeEventListener('mousemove', mm); clearInterval(id); };
     }, [sessionId]);
 
-    const riskColor = riskScore >= 75 ? '#DC2626' : riskScore >= 50 ? '#D97706' : riskScore >= 25 ? '#F59E0B' : '#22C55E';
+    const riskColor = storeRiskScore >= 75 ? '#EF4444' : storeRiskScore >= 50 ? '#F97316' : storeRiskScore >= 25 ? '#F59E0B' : '#10B981';
+    const recentFlags = storeFlags.slice(0, 4);
+
+    if (minimized) {
+        return (
+            <div
+                onClick={() => setMinimized(false)}
+                style={{
+                    position: 'fixed', bottom: '1.5rem', right: '1.5rem',
+                    background: 'rgba(15,23,42,0.92)', backdropFilter: 'blur(12px)',
+                    borderRadius: 99, border: '1px solid rgba(255,255,255,0.12)',
+                    padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: 8,
+                    cursor: 'pointer', zIndex: 9999, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                    transition: 'all 0.2s',
+                }}
+            >
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: riskColor, animation: 'blink 1s infinite' }} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>Proctoring Active</span>
+                <span style={{ fontSize: '0.7rem', color: riskColor, fontWeight: 700 }}>{Math.round(storeRiskScore)}</span>
+                <Eye size={13} color="rgba(255,255,255,0.5)" />
+            </div>
+        );
+    }
 
     return (
-        <div style={{ position: 'fixed', top: '1rem', right: '1rem', width: '280px', display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.8rem', zIndex: 9999 }}>
-            
-            {/* Camera denied banner */}
+        <div className="proctor-widget" style={{ fontFamily: 'Inter, sans-serif' }}>
+            {/* Camera denied */}
             {camStatus === 'denied' && (
-                <div style={{ background: '#DC2626', color: '#fff', padding: '0.75rem', borderRadius: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <CameraOff size={16} /> Camera required — exam cannot continue.
+                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CameraOff size={16} color="#EF4444" />
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#991B1B' }}>Camera required to continue.</span>
                 </div>
             )}
 
-            {/* Top row: Video + Risk */}
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {/* Micro Webcam */}
-                <div style={{ position: 'relative', width: 64, height: 48, borderRadius: 6, overflow: 'hidden', background: '#1E293B', flexShrink: 0 }}>
-                    <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    <canvas ref={canvasRef} style={{ display: 'none' }} />
-                    
-                    {camStatus === 'active' && (
-                        <div style={{ position: 'absolute', bottom: 2, right: 2 }}>
-                            {faceDetected ? <CheckCircle size={10} color="#22C55E" /> : <AlertTriangle size={10} color="#EF4444" />}
-                        </div>
-                    )}
+            {/* Camera feed */}
+            <div className="proctor-cam-wrap">
+                <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', display: 'block', aspectRatio: '4/3', objectFit: 'cover' }} />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+                {/* Face status overlay */}
+                <div style={{ position: 'absolute', bottom: 6, left: 6, right: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', borderRadius: 99, padding: '3px 8px' }}>
+                        {faceDetected
+                            ? <><CheckCircle size={11} color="#10B981" /><span style={{ fontSize: '0.65rem', color: '#fff', fontWeight: 600 }}>Face OK</span></>
+                            : <><AlertTriangle size={11} color="#F59E0B" /><span style={{ fontSize: '0.65rem', color: '#fff', fontWeight: 600 }}>No Face</span></>
+                        }
+                    </div>
+                    <button
+                        onClick={() => setMinimized(true)}
+                        style={{ background: 'rgba(0,0,0,0.5)', border: 'none', color: 'rgba(255,255,255,0.7)', borderRadius: 99, padding: '2px 7px', fontSize: '0.62rem', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                        Minimize
+                    </button>
                 </div>
 
-                {/* Risk score */}
-                <div style={{ flex: 1, background: '#fff', padding: '0.5rem', borderRadius: 6, border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '0.62rem', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Risk Score</div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                        <span style={{ fontSize: '1.25rem', fontWeight: 700, color: riskColor, lineHeight: 1 }}>{Math.round(riskScore)}</span>
-                        <span style={{ fontSize: '0.65rem', color: '#64748B' }}>/ 100</span>
-                    </div>
+                {/* Recording indicator */}
+                <div style={{ position: 'absolute', top: 6, left: 6, display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,0,0,0.55)', borderRadius: 99, padding: '2px 7px' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444', display: 'block', animation: 'blink 1s infinite' }} />
+                    <span style={{ fontSize: '0.6rem', color: '#fff', fontWeight: 700, letterSpacing: '0.05em' }}>REC</span>
                 </div>
             </div>
 
-            {/* Alert log */}
-            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, padding: '0.5rem', maxHeight: 150, overflowY: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                <div style={{ fontSize: '0.62rem', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                    <Activity size={10} /> Alerts ({alerts.length})
-                </div>
-                {alerts.length === 0 ? (
-                    <div style={{ color: '#94A3B8', fontSize: '0.7rem' }}>Monitoring cleanly ✓</div>
-                ) : alerts.map((a) => (
-                    <div key={a.id} style={{ ...flagSeverityStyle[a.severity], borderRadius: 4, padding: '4px 6px', marginBottom: 4, fontSize: '0.7rem' }}>
-                        {a.text}
+            {/* Risk panel */}
+            <div className="proctor-panel">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <ShieldCheck size={13} color={riskColor} />
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Risk Score</span>
                     </div>
-                ))}
+                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: riskColor, letterSpacing: '-0.03em' }}>
+                        {Math.round(storeRiskScore)}<span style={{ fontSize: '0.65rem', opacity: 0.6, fontWeight: 600 }}>/100</span>
+                    </span>
+                </div>
+                {/* Risk meter */}
+                <div style={{ height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 99, overflow: 'hidden', marginBottom: '0.75rem' }}>
+                    <div style={{ height: '100%', width: `${Math.min(storeRiskScore, 100)}%`, background: riskColor, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                </div>
+
+                {/* Flag log */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: '0.4rem' }}>
+                    <Activity size={11} color="rgba(255,255,255,0.35)" />
+                    <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                        Alerts ({storeFlags.length})
+                    </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 100, overflowY: 'auto' }}>
+                    {recentFlags.length === 0 ? (
+                        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.25)', fontStyle: 'italic' }}>Monitoring cleanly ✓</div>
+                    ) : recentFlags.map(flag => {
+                        const cfg = SEVERITY_CONFIG[flag.severity] || SEVERITY_CONFIG.medium;
+                        return (
+                            <div key={flag.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                background: `${cfg.color}18`, borderRadius: 5, padding: '4px 7px',
+                            }}>
+                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.68rem', color: cfg.color, fontWeight: 600, textTransform: 'capitalize', flex: 1 }}>{flag.text}</span>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
+
+            <style>{`@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
         </div>
     );
 }

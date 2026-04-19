@@ -1,9 +1,10 @@
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
+    const conn = await mongoose.connect(config.database.url, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });

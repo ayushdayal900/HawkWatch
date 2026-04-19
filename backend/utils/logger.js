@@ -24,7 +24,8 @@
  */
 
 const winston = require('winston');
-const path    = require('path');
+const path = require('path');
+const config = require('../config');
 
 /* ─── Custom level definitions ──────────────────────────────────────────── */
 const levels = {
@@ -57,19 +58,15 @@ const consoleFormat = winston.format.combine(
     )
 );
 
-/** Plain JSON-free format for log files */
+/** Structured JSON format for log files */
 const fileFormat = winston.format.combine(
     timestampFmt,
     winston.format.errors({ stack: true }),
-    winston.format.printf(({ timestamp, level, message, stack }) =>
-        stack
-            ? `${timestamp} [${level}]: ${message}\n${stack}`
-            : `${timestamp} [${level}]: ${message}`
-    )
+    winston.format.json()
 );
 
 /* ─── Transport factory ─────────────────────────────────────────────────── */
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = config.env !== 'production';
 
 /**
  * Resolve an absolute path inside the project's `logs/` directory.
@@ -84,7 +81,7 @@ const buildTransports = () => {
         return [new winston.transports.Console({ format: consoleFormat })];
     }
 
-    // Production: file transports only (no ANSI colour codes in log files)
+    // Production: file transports with JSON format
     return [
         new winston.transports.File({
             filename: logPath('error.log'),

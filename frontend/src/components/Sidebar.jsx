@@ -1,46 +1,64 @@
-import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import useAuthStore from '../store/authStore';
 import {
     LayoutDashboard, BookOpen, Shield, BarChart3,
-    Users, Settings, LogOut, Eye, Plus,
+    Users, Settings, LogOut, Eye, Plus, Activity,
+    ChevronRight,
 } from 'lucide-react';
-
-const C = {
-    bg: '#1E293B',
-    bgHover: '#0F172A',
-    active: '#3B82F6',
-    activeBg: 'rgba(59,130,246,0.15)',
-    text: 'rgba(255,255,255,0.55)',
-    textHover: 'rgba(255,255,255,0.90)',
-    border: 'rgba(255,255,255,0.08)',
-};
 
 const navItems = {
     student: [
-        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { to: '/exams',     icon: BookOpen,         label: 'My Exams'  },
-        { to: '/results',   icon: BarChart3,        label: 'Results'   },
+        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',  group: 'main' },
+        { to: '/exams',     icon: BookOpen,         label: 'My Exams',   group: 'main' },
+        { to: '/results',   icon: BarChart3,        label: 'Results',    group: 'main' },
     ],
     examiner: [
-        { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard'       },
-        { to: '/create-exam', icon: Plus,            label: 'Create Exam'     },
-        { to: '/exams',       icon: BookOpen,        label: 'Manage Exams'    },
-        { to: '/monitoring',  icon: Eye,             label: 'Monitor Sessions'},
-        { to: '/admin',       icon: Users,           label: 'Organizations'   },
+        { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard',        group: 'main' },
+        { to: '/exams',       icon: BookOpen,        label: 'Manage Exams',     group: 'exams' },
+        { to: '/create-exam', icon: Plus,            label: 'Create Exam',      group: 'exams' },
+        { to: '/monitoring',  icon: Activity,        label: 'Live Monitor',     group: 'proctor' },
+        { to: '/results',     icon: BarChart3,       label: 'Reports',          group: 'proctor' },
+        { to: '/admin',       icon: Users,           label: 'Organizations',    group: 'admin' },
     ],
     admin: [
-        { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard'       },
-        { to: '/create-exam', icon: Plus,            label: 'Create Exam'     },
-        { to: '/exams',       icon: BookOpen,        label: 'Manage Exams'    },
-        { to: '/monitoring',  icon: Eye,             label: 'Monitor Sessions'},
-        { to: '/results',     icon: BarChart3,       label: 'Reports'         },
-        { to: '/admin',       icon: Users,           label: 'Organizations' },
-        { to: '/settings',    icon: Settings,        label: 'Settings'        },
+        { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard',        group: 'main' },
+        { to: '/exams',       icon: BookOpen,        label: 'Manage Exams',     group: 'exams' },
+        { to: '/create-exam', icon: Plus,            label: 'Create Exam',      group: 'exams' },
+        { to: '/monitoring',  icon: Activity,        label: 'Live Monitor',     group: 'proctor' },
+        { to: '/results',     icon: BarChart3,       label: 'Reports',          group: 'proctor' },
+        { to: '/admin',       icon: Users,           label: 'Organizations',    group: 'admin' },
     ],
 };
 
+const groupLabels = {
+    main:    null,
+    exams:   'Exams',
+    proctor: 'Proctoring',
+    admin:   'Administration',
+};
+
+function NavGroup({ label, children }) {
+    return (
+        <div style={{ marginBottom: '0.5rem' }}>
+            {label && (
+                <div style={{
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.09em',
+                    textTransform: 'uppercase',
+                    color: 'rgba(255,255,255,0.25)',
+                    padding: '0.75rem 0.875rem 0.25rem',
+                }}>
+                    {label}
+                </div>
+            )}
+            {children}
+        </div>
+    );
+}
+
 export default function Sidebar() {
-    const { user, logout } = useAuth();
+    const { user, logout, isAdmin, isExaminer } = useAuthStore();
     const navigate = useNavigate();
     const items = navItems[user?.role] || navItems.student;
 
@@ -49,87 +67,136 @@ export default function Sidebar() {
         navigate('/login');
     };
 
+    // Group items
+    const groups = {};
+    items.forEach(item => {
+        if (!groups[item.group]) groups[item.group] = [];
+        groups[item.group].push(item);
+    });
+
+    const roleColor = isAdmin ? '#F59E0B' : isExaminer ? '#A78BFA' : '#34D399';
+    const roleLabel = user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1);
+    const initials = user?.name?.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || '?';
+
+    return (
     return (
         <aside className="sidebar">
             {/* Logo */}
             <div style={{
-                padding: '1.4rem 1.25rem',
-                borderBottom: `1px solid ${C.border}`,
-                display: 'flex', alignItems: 'center', gap: '0.7rem',
+                padding: '1.75rem 1.25rem',
+                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                display: 'flex', alignItems: 'center', gap: '0.875rem',
             }}>
                 <div style={{
-                    width: 34, height: 34,
-                    background: '#3B82F6',
-                    borderRadius: 9,
+                    width: 42, height: 42, borderRadius: 12,
+                    background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0,
+                    flexShrink: 0, boxShadow: '0 8px 20px rgba(59,130,246,0.3)',
                 }}>
-                    <Eye size={17} color="#fff" />
+                    <Eye size={22} color="#fff" strokeWidth={2.5} />
                 </div>
-                <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#F8FAFC', letterSpacing: '-0.01em' }}>
-                    HawkWatch
-                </span>
+                <div>
+                    <div style={{ fontWeight: 900, fontSize: '1.15rem', color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>
+                        HawkWatch<span style={{ color: 'var(--brand-400)' }}>.</span>
+                    </div>
+                    <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800, marginTop: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                        AI Core v4.2
+                    </div>
+                </div>
             </div>
 
-            {/* User badge */}
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: '0.68rem', color: C.text, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>
-                    Signed in as
+            {/* User info */}
+            <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{
+                        width: 38, height: 38, borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #334155, #475569)',
+                        border: `2px solid ${roleColor}33`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.82rem', fontWeight: 700, color: '#F1F5F9',
+                        flexShrink: 0,
+                    }}>
+                        {initials}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{
+                            fontSize: '0.84rem', fontWeight: 600,
+                            color: '#F1F5F9', lineHeight: 1.2,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                            {user?.name}
+                        </div>
+                        <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            marginTop: 3, fontSize: '0.62rem', fontWeight: 700,
+                            color: roleColor, letterSpacing: '0.06em', textTransform: 'uppercase',
+                        }}>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: roleColor, display: 'inline-block' }} />
+                            {roleLabel}
+                        </div>
+                    </div>
                 </div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#F1F5F9' }}>{user?.name}</div>
-                <span style={{
-                    display: 'inline-block', marginTop: '0.4rem',
-                    background: 'rgba(59,130,246,0.2)', color: '#93C5FD',
-                    fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em',
-                    padding: '0.2rem 0.55rem', borderRadius: 999,
-                }}>
-                    {user?.role?.toUpperCase()}
-                </span>
             </div>
 
-            {/* Nav */}
-            <nav style={{ flex: 1, padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', overflowY: 'auto' }}>
-                <div style={{ fontSize: '0.65rem', color: C.text, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0.25rem 0.5rem', marginBottom: '0.25rem' }}>
-                    Menu
-                </div>
-                {/* eslint-disable-next-line no-unused-vars */}
-                {items.map(({ to, icon: Icon, label }) => (
-                    <NavLink
-                        key={to}
-                        to={to}
-                        style={({ isActive }) => ({
-                            display: 'flex', alignItems: 'center', gap: '0.7rem',
-                            padding: '0.6rem 0.75rem',
-                            borderRadius: 8,
-                            fontSize: '0.875rem',
-                            fontWeight: isActive ? 600 : 400,
-                            color: isActive ? '#FFFFFF' : C.text,
-                            background: isActive ? C.activeBg : 'transparent',
-                            borderLeft: isActive ? `3px solid ${C.active}` : '3px solid transparent',
-                            textDecoration: 'none',
-                            transition: 'all 0.15s',
-                        })}
-                    >
-                        <Icon size={16} />
-                        {label}
-                    </NavLink>
+            {/* Navigation */}
+            <nav style={{ flex: 1, overflowY: 'auto', padding: '1rem 0.75rem' }}>
+                {Object.entries(groups).map(([group, groupItems]) => (
+                    <NavGroup key={group} label={groupLabels[group]}>
+                        {groupItems.map(({ to, icon: Icon, label }) => (
+                            <NavLink
+                                key={to}
+                                to={to}
+                                style={({ isActive }) => ({
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.75rem',
+                                    padding: '0.65rem 1rem',
+                                    borderRadius: 10,
+                                    fontSize: '0.875rem',
+                                    fontWeight: isActive ? 700 : 500,
+                                    color: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.45)',
+                                    background: isActive ? 'rgba(59,130,246,0.15)' : 'transparent',
+                                    boxShadow: isActive ? 'inset 0 0 0 1px rgba(255,255,255,0.05)' : 'none',
+                                    textDecoration: 'none',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    marginBottom: 4,
+                                })}
+                            >
+                                {({ isActive }) => (
+                                    <>
+                                        <Icon size={18} strokeWidth={isActive ? 2.5 : 2} style={{ flexShrink: 0, color: isActive ? 'var(--brand-400)' : 'inherit' }} />
+                                        <span style={{ flex: 1 }}>{label}</span>
+                                        {isActive && <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--brand-400)', boxShadow: '0 0 8px var(--brand-400)' }} />}
+                                    </>
+                                )}
+                            </NavLink>
+                        ))}
+                    </NavGroup>
                 ))}
             </nav>
 
-            {/* Logout */}
-            <div style={{ padding: '1rem 0.75rem', borderTop: `1px solid ${C.border}` }}>
+            {/* Bottom: logout */}
+            <div style={{ padding: '0.75rem 0.625rem', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
                 <button
                     onClick={handleLogout}
                     style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: '0.7rem',
-                        padding: '0.6rem 0.75rem', borderRadius: 8, border: 'none',
-                        background: 'transparent', color: C.text, fontSize: '0.875rem',
-                        cursor: 'pointer', transition: 'all 0.15s',
+                        width: '100%', display: 'flex', alignItems: 'center', gap: '0.625rem',
+                        padding: '0.55rem 0.875rem', borderRadius: 8, border: 'none',
+                        background: 'transparent', color: 'rgba(255,255,255,0.4)',
+                        fontSize: '0.875rem', cursor: 'pointer',
+                        transition: 'all 0.15s ease',
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; e.currentTarget.style.color = '#FCA5A5'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.text; }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
+                        e.currentTarget.style.color = '#FCA5A5';
+                    }}
+                    onMouseLeave={e => {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = 'rgba(255,255,255,0.4)';
+                    }}
                 >
-                    <LogOut size={16} /> Sign Out
+                    <LogOut size={15} />
+                    Sign Out
                 </button>
             </div>
         </aside>

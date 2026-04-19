@@ -1,62 +1,23 @@
-/**
- * LivenessDetector.jsx
- * ─────────────────────────────────────────────────────────────────
- * Uses MediaPipe FaceMesh landmarks to detect REAL head direction.
- * Each prompt (Left / Right / Up / Down) is validated ONLY when the
- * user actually turns their head in that direction.
- *
- * Detection logic:
- *   • Yaw  (left/right) – compare nose-tip X to midpoint of ear anchors
- *   • Pitch (up/down)   – compare nose-tip Y to chin / forehead anchors
- *
- * Thresholds are normalised (0–1 image coords) so they are
- * resolution-independent.
- */
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
 import useFaceMesh from '../hooks/useFaceMesh';
-import { CheckCircle, XCircle, Eye, AlertCircle, RefreshCw } from 'lucide-react';
+import { CheckCircle, Eye, AlertCircle, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 
-/* ── Style helpers ─────────────────────────────────────────────── */
-const card  = { background: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: '1.5rem' };
-const mkBtn = (bg, disabled = false) => ({
-    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-    background: disabled ? '#CBD5E1' : bg, color: '#fff',
-    border: 'none', borderRadius: 8, padding: '0.7rem 1.4rem',
-    fontWeight: 600, fontSize: '0.875rem',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    width: '100%', justifyContent: 'center', transition: 'opacity 0.15s',
-});
-
-/* ── Prompts ──────────────────────────────────────────────────── */
 const PROMPTS = [
-    { id: 'left',  label: 'Frame 1 : See Left',  emoji: '⬅️',  dir: 'left'  },
-    { id: 'right', label: 'Frame 2 : See Right', emoji: '➡️',  dir: 'right' },
-    { id: 'up',    label: 'Frame 3 : See Up',    emoji: '⬆️',  dir: 'up'    },
-    { id: 'down',  label: 'Frame 4 : See Down',  emoji: '⬇️',  dir: 'down'  },
+    { id: 'left',  label: 'Turn Left',   emoji: '⬅️',  dir: 'left'  },
+    { id: 'right', label: 'Turn Right',  emoji: '➡️',  dir: 'right' },
+    { id: 'up',    label: 'Look Up',     emoji: '⬆️',  dir: 'up'    },
+    { id: 'down',  label: 'Look Down',   emoji: '⬇️',  dir: 'down'  },
 ];
 
-/* ── MediaPipe landmark indices ───────────────────────────────── */
-// 468 total landmarks from FaceMesh (refineLandmarks: false)
 const IDX = {
-    noseTip:  1,    // tip of nose
-    leftEar:  234,  // left cheek/temple anchor  (camera-left  = user's RIGHT)
-    rightEar: 454,  // right cheek/temple anchor (camera-right = user's LEFT)
-    chin:     152,  // bottom of chin
-    forehead: 10,   // top of forehead
+    noseTip:  1,
+    leftEar:  234,
+    rightEar: 454,
+    chin:     152,
+    forehead: 10,
 };
 
-/* ── Head direction classifier ────────────────────────────────── */
-// Returns 'left'|'right'|'up'|'down'|'center'|null (null = no face)
-//
-// ⚠️  Mirror correction:
-//   The <video> is displayed with transform: scaleX(-1) (mirror mode),
-//   but MediaPipe receives the RAW (un-mirrored) camera frame.
-//   So when the user turns their head LEFT (from their POV):
-//     → In the raw frame the nose moves to the RIGHT  (positive X shift)
-//     → yaw = nose.x - earMidX  >  0
-//   Therefore yaw > 0  ⟹ user turned LEFT  (opposite of naive intuition).
 function classifyDirection(landmarks) {
     if (!landmarks || landmarks.length < 468) return null;
 
@@ -68,96 +29,69 @@ function classifyDirection(landmarks) {
 
     if (!nose || !leftEar || !rightEar || !chin || !forehead) return null;
 
-    // Horizontal midpoint of both ear anchors
     const earMidX  = (leftEar.x + rightEar.x) / 2;
-    const yaw      = nose.x - earMidX; // positive = nose shifted camera-right
-
-    // Vertical midpoint between forehead and chin
+    const yaw      = nose.x - earMidX;
     const vertMid  = (chin.y + forehead.y) / 2;
-    const pitch    = nose.y - vertMid;  // positive = nose shifted downward
+    const pitch    = nose.y - vertMid;
 
-    // Adaptive thresholds — 7% of face width for yaw, 5% for pitch
     const faceWidth = Math.abs(leftEar.x - rightEar.x);
     const YAW_THR   = faceWidth * 0.07;
     const PITCH_THR = faceWidth * 0.05;
 
-    // Mirror-corrected mapping:
-    if      (yaw  >  YAW_THR)   return 'left';   // nose went camera-right → user's LEFT
-    else if (yaw  < -YAW_THR)   return 'right';  // nose went camera-left  → user's RIGHT
+    if      (yaw  >  YAW_THR)   return 'left';
+    else if (yaw  < -YAW_THR)   return 'right';
     else if (pitch < -PITCH_THR) return 'up';
     else if (pitch >  PITCH_THR) return 'down';
     else                         return 'center';
 }
 
-/* ── GoalCard ─────────────────────────────────────────────────── */
 function GoalCard({ prompt, state, holdPct }) {
-    // state: 'waiting' | 'active' | 'holding' | 'passed' | 'failed'
-    const styles = {
-        waiting: { bg: '#F8FAFC', border: '#E2E8F0', titleColor: '#94A3B8' },
-        active:  { bg: '#EFF6FF', border: '#93C5FD', titleColor: '#1D4ED8' },
-        holding: { bg: '#ECFDF5', border: '#6EE7B7', titleColor: '#059669' },
-        passed:  { bg: '#F0FDF4', border: '#BBF7D0', titleColor: '#15803D' },
-        failed:  { bg: '#FEF2F2', border: '#FECACA', titleColor: '#DC2626' },
-    };
-    const s = styles[state] || styles.waiting;
+    // state: 'waiting' | 'active' | 'holding' | 'passed'
+    const isActive = state === 'active' || state === 'holding';
+    const isPassed = state === 'passed';
 
     return (
         <div style={{
             display: 'flex', alignItems: 'center', gap: '1rem',
-            padding: '0.85rem 1rem', borderRadius: 10,
-            background: s.bg, border: `1.5px solid ${s.border}`,
-            transition: 'all 0.25s',
+            padding: '1rem', borderRadius: 'var(--r-md)',
+            background: isPassed ? 'var(--success-bg)' : isActive ? 'var(--brand-50)' : 'var(--n-50)',
+            border: `1px solid ${isPassed ? 'var(--success)' : isActive ? 'var(--brand-300)' : 'var(--border)'}`,
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             position: 'relative', overflow: 'hidden',
         }}>
-            {/* Hold-progress bar */}
             {state === 'holding' && (
                 <div style={{
-                    position: 'absolute', left: 0, bottom: 0, height: 3,
-                    width: `${holdPct}%`, background: '#10B981',
+                    position: 'absolute', left: 0, bottom: 0, height: 4,
+                    width: `${holdPct}%`, background: 'var(--success)',
                     transition: 'width 0.1s linear',
+                    boxShadow: '0 0 10px var(--success)'
                 }} />
             )}
-            <div style={{ color: s.titleColor }}>{state === 'passed' ? <CheckCircle size={22} color="#22C55E" /> : <Eye size={18} />}</div>
+            <div style={{ 
+                width: 32, height: 32, borderRadius: 8, 
+                background: isPassed ? 'var(--success)' : isActive ? 'var(--brand-500)' : 'var(--n-200)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', transition: 'all 0.3s'
+            }}>
+                {isPassed ? <CheckCircle size={18} /> : <span>{prompt.emoji}</span>}
+            </div>
             <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#1E293B' }}>
-                    {prompt.label} {prompt.emoji}
-                </p>
-                <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748B', marginTop: 1 }}>
-                    {state === 'waiting'  && 'Waiting to capture...'}
-                    {state === 'active'   && '👀 Turn your head now'}
-                    {state === 'holding'  && '✅ Hold it…'}
-                    {state === 'passed'   && 'Passed AI Check'}
-                    {state === 'failed'   && 'Failed AI Check'}
-                </p>
+                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: isPassed ? 'var(--success-txt)' : 'var(--n-800)' }}>
+                    {prompt.label}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: isPassed ? 'var(--success-txt)' : 'var(--n-500)', opacity: 0.8, marginTop: 1 }}>
+                    {state === 'waiting'  && 'Pending detection...'}
+                    {state === 'active'   && 'Turn your head now'}
+                    {state === 'holding'  && 'Hold position...'}
+                    {state === 'passed'   && 'Biometrics captured'}
+                </div>
             </div>
         </div>
     );
 }
 
-/* ── Direction indicator overlay ──────────────────────────────── */
-function DirectionIndicator({ required, current }) {
-    const match = required && current === required;
-    return (
-        <div style={{
-            position: 'absolute', bottom: 8, left: 0, right: 0,
-            display: 'flex', justifyContent: 'center', pointerEvents: 'none',
-        }}>
-            <span style={{
-                background: match ? 'rgba(16,185,129,0.92)' : 'rgba(15,23,42,0.72)',
-                color: '#fff', padding: '4px 12px', borderRadius: 99,
-                fontSize: '0.72rem', fontWeight: 700, backdropFilter: 'blur(4px)',
-                transition: 'background 0.2s',
-            }}>
-                {current ? `Head: ${current}` : 'No face'}
-                {required && ` — need: ${required}`}
-            </span>
-        </div>
-    );
-}
-
-/* ── Main component ───────────────────────────────────────────── */
-const HOLD_MS    = 800;  // ms user must hold correct direction to confirm
-const TICK_MS    = 80;   // polling interval
+const HOLD_MS = 800;
+const TICK_MS = 80;
 
 export default function LivenessDetector({ sessionId, onVerified }) {
     const videoRef  = useRef(null);
@@ -170,23 +104,17 @@ export default function LivenessDetector({ sessionId, onVerified }) {
     const [holdPct,      setHoldPct]      = useState(0);
     const [currentDir,   setCurrentDir]   = useState(null);
     const [allDone,      setAllDone]      = useState(false);
-    const [failed,       setFailed]       = useState(false);
-    const [confirming,   setConfirming]   = useState(false);  // backend call in progress
-    const [confirmError, setConfirmError] = useState(null);
+    const [confirming,   setConfirming]   = useState(false);
 
-    // Refs for the validation loop (avoids stale closures in setInterval)
     const promptIdxRef  = useRef(0);
-    const holdStartRef  = useRef(null);   // timestamp when correct direction started
+    const holdStartRef  = useRef(null);
     const tickRef       = useRef(null);
-    const landmarksRef  = useRef(null);   // always-fresh landmarks, avoids stale closure
+    const landmarksRef  = useRef(null);
 
-    /* ── Face mesh hook ─────────────────────────────────────────── */
     const { ready: meshReady, modelLoading, faceDetected, landmarks, startTracking, stopTracking } = useFaceMesh(videoRef);
 
-    // Keep landmarksRef always current so setInterval never reads stale data
     useEffect(() => { landmarksRef.current = landmarks; }, [landmarks]);
 
-    /* ── Camera ─────────────────────────────────────────────────── */
     useEffect(() => {
         let s;
         navigator.mediaDevices
@@ -200,53 +128,39 @@ export default function LivenessDetector({ sessionId, onVerified }) {
         return () => s?.getTracks().forEach(t => t.stop());
     }, []);
 
-    /* ── Start tracking once both cam and model are ready ───────── */
     useEffect(() => {
-        if (camReady && meshReady && started) {
-            startTracking();
-        }
-        return () => {
-            if (!started) stopTracking();
-        };
+        if (camReady && meshReady && started) startTracking();
+        return () => stopTracking();
     }, [camReady, meshReady, started, startTracking, stopTracking]);
 
-    /* ── Validation loop ────────────────────────────────────────── */
-    // Does NOT include `landmarks` in deps — reads from landmarksRef instead
-    // so the interval is created once and always has fresh data.
     useEffect(() => {
-        if (!started || allDone || failed) return;
+        if (!started || allDone) return;
 
         tickRef.current = setInterval(() => {
             const idx = promptIdxRef.current;
             if (idx >= PROMPTS.length) return;
 
             const required = PROMPTS[idx].dir;
-            // Use ref so we always get the latest landmarks without restarting the interval
             const dir = classifyDirection(landmarksRef.current);
-            setCurrentDir(dir);   // update display
+            setCurrentDir(dir);
 
             if (dir === required) {
-                if (!holdStartRef.current) {
-                    holdStartRef.current = performance.now();
-                }
+                if (!holdStartRef.current) holdStartRef.current = performance.now();
                 const elapsed = performance.now() - holdStartRef.current;
                 const pct = Math.min(100, (elapsed / HOLD_MS) * 100);
                 setHoldPct(pct);
                 setStepStates(prev => prev.map((s, i) => i === idx ? 'holding' : s));
 
                 if (elapsed >= HOLD_MS) {
-                    // ✅ Prompt PASSED
                     holdStartRef.current = null;
                     setHoldPct(0);
                     setStepStates(prev => prev.map((s, i) => i === idx ? 'passed' : s));
-
                     const nextIdx = idx + 1;
                     promptIdxRef.current = nextIdx;
                     setPromptIdx(nextIdx);
 
                     if (nextIdx >= PROMPTS.length) {
                         clearInterval(tickRef.current);
-                        tickRef.current = null;
                         setAllDone(true);
                         stopTracking();
                     } else {
@@ -254,7 +168,6 @@ export default function LivenessDetector({ sessionId, onVerified }) {
                     }
                 }
             } else {
-                // Wrong direction — reset hold timer
                 if (holdStartRef.current) {
                     holdStartRef.current = null;
                     setHoldPct(0);
@@ -263,18 +176,13 @@ export default function LivenessDetector({ sessionId, onVerified }) {
             }
         }, TICK_MS);
 
-        return () => { clearInterval(tickRef.current); tickRef.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [started, allDone, failed, stopTracking]); // ← NO `landmarks` here — use ref instead
+        return () => clearInterval(tickRef.current);
+    }, [started, allDone, stopTracking]);
 
-    /* ── Confirm with backend once all done ─────────────────────── */
     useEffect(() => {
         if (!allDone || !sessionId) return;
-
-        // Capture a frame and send to backend to set livenessPassed = true
         const confirmLiveness = async () => {
             setConfirming(true);
-            setConfirmError(null);
             try {
                 const v = videoRef.current;
                 let frameBase64 = null;
@@ -285,14 +193,9 @@ export default function LivenessDetector({ sessionId, onVerified }) {
                     canvas.getContext('2d').drawImage(v, 0, 0);
                     frameBase64 = canvas.toDataURL('image/jpeg', 0.85);
                 }
-                await api.post('/verification/liveness', {
-                    sessionId,
-                    frameBase64: frameBase64 || '',
-                    clientVerified: true,  // signal that client-side direction check passed
-                });
+                await api.post('/verification/liveness', { sessionId, frameBase64: frameBase64 || '', clientVerified: true });
             } catch (e) {
-                // Non-fatal: log but don't block the user
-                console.warn('Liveness backend confirm failed (non-fatal):', e.message);
+                console.warn('Liveness backend confirm failed:', e.message);
             } finally {
                 setConfirming(false);
             }
@@ -305,140 +208,93 @@ export default function LivenessDetector({ sessionId, onVerified }) {
         holdStartRef.current = null;
         setPromptIdx(0);
         setHoldPct(0);
-        setCurrentDir(null);
         setAllDone(false);
-        setFailed(false);
         setStepStates(PROMPTS.map((_, i) => i === 0 ? 'active' : 'waiting'));
         setStarted(true);
     }, []);
 
-    const canStart = camReady && meshReady;
-
     return (
-        <div style={card} className="animate-fade-up">
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Eye size={18} color="#10B981" />
+        <div className="card animate-fade-up">
+            <div style={{ display: 'flex', gap: '0.875rem', marginBottom: '1.5rem' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Eye size={22} color="var(--success)" />
                 </div>
                 <div>
-                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>Liveness Verification</h3>
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748B' }}>
-                        Follow each direction prompt — hold until confirmed.
-                    </p>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--n-900)', letterSpacing: '-0.02em' }}>Liveness Detection</h3>
+                    <p style={{ margin: '0.2rem 0 0', color: 'var(--n-500)', fontSize: '0.85rem' }}>Randomized movement checks to prevent spoofing attempts.</p>
                 </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
-                {/* Webcam */}
-                <div style={{ width: 220, flexShrink: 0 }}>
-                    <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', background: '#0F172A', aspectRatio: '4/3' }}>
-                        <video
-                            ref={videoRef}
-                            autoPlay muted playsInline
-                            onLoadedData={() => setCamReady(true)}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', display: 'block' }}
-                        />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div style={{ position: 'relative', borderRadius: 'var(--r-lg)', overflow: 'hidden', background: 'var(--n-900)', border: '2px solid var(--border)', aspectRatio: '4/3' }}>
+                    <video
+                        ref={videoRef}
+                        autoPlay muted playsInline
+                        onLoadedData={() => setCamReady(true)}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+                    />
+                    
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                        <div style={{ width: '60%', height: '80%', border: `2px solid ${faceDetected ? 'var(--success)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '50%', transition: 'all 0.3s' }} />
+                    </div>
 
-                        {/* Face oval guide */}
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                            <div style={{
-                                width: '60%', height: '80%',
-                                border: `2px solid ${faceDetected ? 'rgba(34,197,94,0.8)' : 'rgba(255,255,255,0.4)'}`,
-                                borderRadius: '50%', transition: 'border-color 0.3s',
-                            }} />
+                    {started && !allDone && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '1rem' }}>
+                             <div className="badge badge-info" style={{ position: 'absolute', top: 12, left: 12 }}>
+                                {promptIdx + 1} of 4
+                             </div>
+                             <div style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 900, textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
+                                {PROMPTS[promptIdx].label} {PROMPTS[promptIdx].emoji}
+                             </div>
+                             {currentDir && (
+                                <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', fontWeight: 700, color: currentDir === PROMPTS[promptIdx].dir ? 'var(--success)' : '#fff', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                                    Detected: {currentDir}
+                                </div>
+                             )}
                         </div>
+                    )}
 
-                        {/* Current prompt overlay */}
-                        {started && !allDone && promptIdx < PROMPTS.length && (
-                            <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                <RefreshCw size={24} color="#38BDF8" style={{ animation: 'spin 1.5s linear infinite' }} />
-                                <span style={{ color: '#bae6fd', fontSize: '0.72rem', fontWeight: 600 }}>Capturing Frame {promptIdx + 1}/4</span>
-                                <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700, marginTop: 4 }}>
-                                    {PROMPTS[promptIdx].label.split(' : ')[1]} {PROMPTS[promptIdx].emoji}
-                                </span>
+                    {modelLoading && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'var(--n-900)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                            <Loader2 size={32} color="var(--brand-400)" className="animate-spin" />
+                            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem' }}>Loading Vision AI...</p>
+                        </div>
+                    )}
+
+                    {allDone && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+                            <div style={{ background: '#fff', borderRadius: '50%', padding: '1rem', boxShadow: 'var(--shadow-xl)' }}>
+                                <CheckCircle size={64} color="var(--success)" />
                             </div>
-                        )}
-
-                        {/* Model loading overlay */}
-                        {modelLoading && (
-                            <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.75)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                <div style={{ width: 28, height: 28, border: '3px solid #38BDF8', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                                <span style={{ color: '#bae6fd', fontSize: '0.72rem', fontWeight: 600 }}>Loading AI model…</span>
-                            </div>
-                        )}
-
-                        {/* Success overlay */}
-                        {allDone && (
-                            <div style={{ position: 'absolute', inset: 0, background: 'rgba(22,163,74,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <CheckCircle size={52} color="#22C55E" />
-                            </div>
-                        )}
-
-                        {/* Live direction indicator */}
-                        {started && !allDone && (
-                            <DirectionIndicator required={PROMPTS[promptIdx]?.dir} current={currentDir} />
-                        )}
-                    </div>
-
-                    {/* Face status pill */}
-                    <div style={{ marginTop: 6, textAlign: 'center' }}>
-                        <span style={{
-                            fontSize: '0.68rem', fontWeight: 700, padding: '2px 10px', borderRadius: 99,
-                            background: faceDetected ? '#F0FDF4' : '#FEF2F2',
-                            color:      faceDetected ? '#15803D' : '#DC2626',
-                            border:     `1px solid ${faceDetected ? '#BBF7D0' : '#FECACA'}`,
-                        }}>
-                            {faceDetected ? '✓ Face detected' : '✗ No face'}
-                        </span>
-                    </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Step list */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     {PROMPTS.map((p, i) => (
-                        <GoalCard
-                            key={p.id}
-                            prompt={p}
-                            state={stepStates[i]}
-                            holdPct={i === promptIdx ? holdPct : 0}
-                        />
+                        <GoalCard key={p.id} prompt={p} state={stepStates[i]} holdPct={i === promptIdx ? holdPct : 0} />
                     ))}
                 </div>
             </div>
 
-            {/* Warning: no face */}
             {started && !allDone && !faceDetected && (
-                <div style={{ marginTop: '0.85rem', padding: '0.65rem 0.9rem', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, fontSize: '0.78rem', color: '#92400E', display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <AlertCircle size={14} /> No face detected — center your face in the oval.
+                <div className="alert alert-warning animate-fade-up" style={{ marginTop: '1.5rem' }}>
+                    <AlertCircle size={18} />
+                    <span>Face lost. Please center yourself and try again.</span>
                 </div>
             )}
 
-            {/* CTA */}
-            <div style={{ marginTop: '1.25rem' }}>
+            <div style={{ marginTop: '1.75rem' }}>
                 {allDone ? (
-                    <button style={mkBtn(confirming ? '#CBD5E1' : '#22C55E', confirming)} onClick={onVerified} disabled={confirming}>
-                        {confirming
-                            ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Confirming with server…</>
-                            : <><CheckCircle size={15} /> Liveness Confirmed — Continue</>
-                        }
+                    <button className="btn btn-success btn-lg" style={{ width: '100%' }} onClick={onVerified} disabled={confirming}>
+                        {confirming ? <><Loader2 size={18} className="animate-spin" /> Syncing...</> : <><CheckCircle size={18} /> All Checks Passed — Continue <ArrowRight size={18} /></>}
                     </button>
                 ) : (
-                    <button
-                        style={mkBtn(canStart ? '#10B981' : '#CBD5E1', !canStart)}
-                        onClick={handleStart}
-                        disabled={!canStart}
-                    >
-                        {modelLoading
-                            ? '⏳ Loading model…'
-                            : started
-                                ? '🔄 Restart'
-                                : '▶ Start Liveness Check'}
+                    <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={handleStart} disabled={!camReady || modelLoading}>
+                        {started ? 'Restart Verification' : 'Begin Liveness Check'}
                     </button>
                 )}
             </div>
-
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
     );
 }
