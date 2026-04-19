@@ -33,7 +33,11 @@ const examCreateSchema = Joi.object({
         flagThreshold: Joi.number().default(5)
     }).default(),
     allowedStudents: Joi.array().items(Joi.string().hex().length(24)).default([]),
-    status: Joi.string().valid('draft', 'published').default('draft')
+    status: Joi.string().valid('draft', 'published').default('draft'),
+    accessType: Joi.string().valid('public', 'organization').default('public'),
+    organization: Joi.alternatives().try(Joi.string().hex().length(24), Joi.string().allow('', null)),
+    category: Joi.string().allow('', null),
+    tags: Joi.array().items(Joi.string()).default([])
 });
 
 const validateBody = (schema) => {
