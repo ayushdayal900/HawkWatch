@@ -14,9 +14,10 @@ const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
 
 // Route imports
-const authRoutes = require('./routes/auth.routes');
-const examRoutes = require('./routes/exam.routes');
-const proctoringRoutes = require('./routes/proctoring.routes');
+const authRoutes         = require('./routes/auth.routes');
+const examRoutes         = require('./routes/exam.routes');
+const proctoringRoutes   = require('./routes/proctoring.routes');
+const proctorRoutes      = require('./routes/proctor.routes');   // legacy event log
 const verificationRoutes = require('./routes/verification.routes');
 const organizationRoutes = require('./routes/organization.routes');
 
@@ -26,6 +27,8 @@ const server = http.createServer(app);
 
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { Redis } = require('ioredis');
+
+const setupSockets = require('./sockets/index');
 
 // ─── Socket.IO (real-time proctoring events) ─────────────────────────────────
 const io = new SocketIO(server, {
@@ -45,27 +48,8 @@ if (config.redis && config.redis.url) {
 // Attach io to req for controllers
 app.set('io', io);
 
-io.on('connection', (socket) => {
-    logger.info(`Socket connected: ${socket.id}`);
-
-    socket.on('join-session', ({ sessionId }) => {
-        socket.join(`session:${sessionId}`);
-        logger.info(`Socket ${socket.id} joined session room: ${sessionId}`);
-    });
-
-    socket.on('proctor-event', ({ sessionId, eventType, data }) => {
-        // Broadcast to examiners watching this session
-        io.to(`proctor:${sessionId}`).emit('student-event', { eventType, data, timestamp: Date.now() });
-    });
-
-    socket.on('join-proctor-room', ({ sessionId }) => {
-        socket.join(`proctor:${sessionId}`);
-    });
-
-    socket.on('disconnect', () => {
-        logger.info(`Socket disconnected: ${socket.id}`);
-    });
-});
+// Initialize Socket Events
+setupSockets(io);
 
 // ─── Security Middleware ──────────────────────────────────────────────────────
 app.use(helmet());
@@ -78,8 +62,8 @@ app.use(compression());
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: parseInt(config.security.rateLimitWindowMs || '900000'),
-    max: parseInt(config.security.rateLimitMax || '100'),
+    windowMs: parseInt(config.security.rateLimitWindowMs || '900000'), // 15 minutes
+    max: parseInt(config.security.rateLimitMax || '10000'), // High limit for proctoring events
     message: { success: false, message: 'Too many requests. Please try again later.' },
 });
 app.use('/api/', limiter);
@@ -104,10 +88,11 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/exams', examRoutes);
-app.use('/api/proctoring', proctoringRoutes);
-app.use('/api/verification', verificationRoutes);
+app.use('/api/auth',          authRoutes);
+app.use('/api/exams',         examRoutes);
+app.use('/api/proctoring',    proctoringRoutes);
+app.use('/api/proctor',       proctorRoutes);     // legacy event log endpoints
+app.use('/api/verification',  verificationRoutes);
 app.use('/api/organizations', organizationRoutes);
 
 // 404 handler
@@ -151,8 +136,3 @@ process.on('SIGINT', async () => {
         process.exit(0);
     });
 });
-// 
-// restart 2 
-// r 
-// restart 
-// 

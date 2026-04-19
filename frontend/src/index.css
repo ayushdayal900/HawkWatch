@@ -187,6 +187,14 @@ img {
   padding: 2rem;
   background: var(--bg);
   transition: margin-left var(--t-slow), padding var(--t-base);
+  /* Prevent content from overflowing the viewport on small screens */
+  max-width: calc(100vw - var(--sidebar-w));
+}
+
+/* ── Content Container (inside main-content) ─── */
+.content-container {
+  width: 100%;
+  padding: 1.5rem 2rem 2rem;
 }
 
 /* ── Container ────────────────────────────────── */
@@ -985,12 +993,12 @@ select.input {
 ══════════════════════════════════════════════ */
 .proctor-widget {
   position: fixed;
-  top: 1rem;
+  top: 5rem;
   right: 1rem;
-  width: 272px;
+  width: 240px;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 0.5rem;
   z-index: 9999;
   font-family: var(--font);
 }
@@ -1077,7 +1085,7 @@ select.input {
    RESPONSIVE OVERRIDES
 ══════════════════════════════════════════════ */
 
-/* Tablet & Mobile Breakpoint (Large) */
+/* Tablet & Mobile Breakpoint (≤1024px) */
 @media (max-width: 1024px) {
   .sidebar {
     transform: translateX(-100%);
@@ -1090,43 +1098,77 @@ select.input {
 
   .main-content {
     margin-left: 0;
+    max-width: 100vw;
     padding: 1.5rem 1rem;
+  }
+
+  .content-container {
+    padding: 1rem 1rem 1.5rem;
   }
 
   .modal-panel {
     width: 95%;
     max-height: 85vh;
   }
+
+  /* Monitoring command bar — let filter pills wrap */
+  .monitor-command-bar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* Notification & profile dropdowns — prevent overflow off-screen */
+  .navbar-dropdown {
+    right: 0;
+    min-width: min(320px, calc(100vw - 2rem));
+  }
+
+  /* CreateExam sticky sidebar becomes static on tablet */
+  .create-exam-sidebar {
+    position: static !important;
+  }
 }
 
-/* Mobile Breakpoint (Small) */
+/* Mobile Breakpoint (≤640px) */
 @media (max-width: 640px) {
   html {
     font-size: 15px;
   }
 
-  .btn {
-    width: 100%;
+  .content-container {
+    padding: 0.75rem 0.75rem 1.5rem;
   }
 
-  /* Stack buttons on mobile unless specifically small */
-  .btn-sm,
-  .btn-icon {
-    width: auto;
+  /* Buttons — full-width on mobile ONLY for .btn:not(.btn-sm):not(.btn-icon) */
+  .btn:not(.btn-sm):not(.btn-icon) {
+    width: 100%;
+    justify-content: center;
   }
 
   .input-group {
     width: 100%;
   }
 
+  /* Stat cards — keep horizontal layout on phones */
   .stat-card {
     padding: 1rem;
     flex-direction: row;
     align-items: center;
   }
 
-  .exam-shell {
-    flex-direction: column;
+  /* Responsive grid → single col on phone */
+  .responsive-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Dashboard main grid → single col on phone */
+  .dashboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Exam interface */
+  .exam-shell, .exam-shell-inner {
+    flex-direction: column !important;
   }
 
   .exam-nav {
@@ -1140,12 +1182,15 @@ select.input {
   .exam-topbar,
   .exam-footer {
     padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .exam-content {
     padding: 1rem;
   }
 
+  /* Proctor widget — bottom bar on mobile */
   .proctor-widget {
     width: calc(100% - 2rem);
     top: auto;
@@ -1153,9 +1198,41 @@ select.input {
     left: 1rem;
     right: 1rem;
   }
+
+  /* Tables — horizontally scrollable */
+  .table-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Modal footer — stack buttons on mobile */
+  .modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+  }
+
+  /* Form grids — stack on mobile */
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Toolbar flex rows — wrap on mobile */
+  .toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-row .btn,
+  .toolbar-row input,
+  .toolbar-row select {
+    width: 100%;
+  }
 }
 
-/* Sidebar Overlay for Mobile */
+/* Sidebar Overlay — always available (not just mobile) */
 .sidebar-overlay {
   position: fixed;
   inset: 0;
@@ -1165,11 +1242,12 @@ select.input {
   animation: fadeIn 0.2s ease;
 }
 
-/* Utility visibility classes */
+/* ── Utility Visibility ─────────────────────── */
 .hide-mobile {
   display: block;
 }
 
+/* show-mobile uses flex so icon+text buttons lay out correctly */
 .show-mobile {
   display: none;
 }
@@ -1179,7 +1257,60 @@ select.input {
     display: none !important;
   }
 
+  /* flex for icon buttons, block for others */
   .show-mobile {
+    display: flex !important;
+    align-items: center;
+  }
+
+  /* Pure text / non-flex show-mobile elements */
+  span.show-mobile,
+  p.show-mobile,
+  div.show-mobile:not([style*='display: flex']) {
     display: block !important;
+  }
+}
+
+/* ── Table responsive utility ───────────────── */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--r-lg);
+}
+
+/* ── CreateExam responsive layout ──────────── */
+@media (max-width: 900px) {
+  .create-exam-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .create-exam-sidebar {
+    position: static !important;
+    top: auto !important;
+  }
+}
+
+/* ── MonitoringPage command bar responsive ── */
+@media (max-width: 768px) {
+  .monitor-filter-pills {
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .monitor-filter-pills button {
+    flex: 1 0 auto;
+    min-width: 70px;
+    text-align: center;
+  }
+}
+
+/* ── Navbar dropdown position fix on mobile ─ */
+@media (max-width: 480px) {
+  .navbar-dropdown-right {
+    right: -1rem !important;
+    min-width: calc(100vw - 2rem) !important;
+    position: fixed !important;
+    top: 70px !important;
   }
 }

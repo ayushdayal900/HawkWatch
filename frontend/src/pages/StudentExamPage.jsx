@@ -74,15 +74,30 @@ export default function StudentExamPage() {
                 const remaining = (examObj.duration * 60) - passedTime;
                 setTimeRemaining(remaining > 0 ? remaining : 0);
 
-                // 3. Start Proctoring
+                // 3. Start Proctoring — recover existing session if 409
                 try {
-                    const { data: procData } = await proctoringAPI.startSession({ examId: id });
+                    const { data: procData } = await proctoringAPI.startSession({ 
+                        examId: id, 
+                        attemptId: sessionDetails._id || sessionDetails.id 
+                    });
                     if (mounted) setProcSessionId(procData?.data?._id || procData?._id || null);
                 } catch (procErr) {
                     const status = procErr.status || procErr.response?.status;
                     if (status === 409) {
-                        const sid = procErr.data?.sessionId || procErr.response?.data?.sessionId;
-                        if (sid && mounted) setProcSessionId(sid);
+                        // Session already exists — try to get sessionId from error response
+                        const sid = procErr.data?.sessionId 
+                            || procErr.response?.data?.sessionId;
+                        if (sid && mounted) {
+                            setProcSessionId(sid);
+                        } else {
+                            // Fallback: fetch all active sessions and find ours
+                            try {
+                                const existingSession = await proctoringAPI.getSessionForExam(id);
+                                if (existingSession?._id && mounted) {
+                                    setProcSessionId(existingSession._id);
+                                }
+                            } catch { /* non-fatal — proctoring unavailable */ }
+                        }
                     }
                 }
 
@@ -133,7 +148,6 @@ export default function StudentExamPage() {
         }
     }, [id, setAnswer]);
 
-    // Submit procedure
     const autoSubmit = useCallback(async (reason = null) => {
         if (submitting) return;
         setSubmitting(true);
@@ -144,17 +158,33 @@ export default function StudentExamPage() {
                 await proctoringAPI.endSession(procSessionId).catch(() => {});
             }
             const currentAnswers = useExamStore.getState().answers;
-            const { data } = await api.post(`/exams/${id}/submit`, { examId: id, answers: Object.entries(currentAnswers) });
+            const { data } = await api.post(`/exams/${id}/submit`, {
+                examId: id,
+                answers: Object.entries(currentAnswers)
+            });
             
-            useNotificationStore.getState().addNotification(`Exam Completed: Your attempt for "${currentExam.title}" has been submitted successfully.`);
+            const result = data.data || data;
+            const attemptId = result.attemptId;
 
-            navigate(`/student-exam-results/${data.data?.attemptId || data.attemptId}`, { replace: true });
+            // Cache result in sessionStorage as fallback for ResultsPage
+            if (attemptId) {
+                try {
+                    sessionStorage.setItem(`exam_result_${attemptId}`, JSON.stringify(result));
+                } catch { /* non-fatal */ }
+            }
+
+            useNotificationStore.getState().addNotification(
+                `Exam Completed: Your attempt for "${currentExam?.title}" has been submitted successfully.`
+            );
+
+            // Navigate to the correct results route
+            navigate(`/results/${attemptId}`, { replace: true });
         } catch (e) {
             setSubmitting(false);
             setTerminatingReason(null);
-            toast.error(e.error || 'Submission failed. Please try again.');
+            toast.error(e.error || e.message || 'Submission failed. Please try again.');
         }
-    }, [id, navigate, procSessionId, submitting]);
+    }, [id, navigate, procSessionId, submitting, currentExam]);
 
     if (loading) return (
         <div className="empty-state" style={{ height: '100vh', background: 'var(--bg)' }}>
@@ -200,7 +230,7 @@ export default function StudentExamPage() {
                 />
             )}
 
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+            <div className="exam-shell-inner" style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
                 <ExamNavigation 
                     examTitle={currentExam.title} 
                     questions={questions} 

@@ -40,6 +40,31 @@ const examCreateSchema = Joi.object({
     tags: Joi.array().items(Joi.string()).default([])
 });
 
+/* ── Proctoring schemas (additive) ──────────────────────────────────────── */
+
+const flagEventSchema = Joi.object({
+    type: Joi.string().required(),
+    severity: Joi.string().valid('low', 'medium', 'high', 'critical').default('medium'),
+    confidence: Joi.number().min(0).max(1),
+    details: Joi.any(),
+    frameData: Joi.string().allow('', null),
+});
+
+const proctorEventSchema = Joi.object({
+    examId: Joi.string().hex().length(24).required(),
+    eventType: Joi.string().required(),
+    studentId: Joi.string().hex().length(24),
+    timestamp: Joi.date(),
+    riskWeight: Joi.number().min(0),
+});
+
+const startSessionSchema = Joi.object({
+    examId: Joi.string().hex().length(24).required(),
+    attemptId: Joi.string().hex().length(24),
+});
+
+/* ── Generic validate middleware factory ────────────────────────────────── */
+
 const validateBody = (schema) => {
     return (req, res, next) => {
         const { error } = schema.validate(req.body, { abortEarly: false });
@@ -51,4 +76,11 @@ const validateBody = (schema) => {
     };
 };
 
-module.exports = { validateBody, examCreateSchema };
+module.exports = {
+    validateBody,
+    examCreateSchema,
+    flagEventSchema,
+    proctorEventSchema,
+    startSessionSchema,
+};
+

@@ -136,7 +136,8 @@ api.interceptors.response.use(
         return Promise.reject({
             success: false,
             error: errorMsg,
-            status: error.response?.status
+            status: error.response?.status,
+            data: error.response?.data,   // preserve raw response body for callers
         });
     }
 );
@@ -173,7 +174,12 @@ export const proctoringAPI = {
     updateBehavioral:(sessionId, data)      => api.post(`/proctoring/${sessionId}/behavioral`,     data),
     getReport:       (sessionId)            => api.get (`/proctoring/${sessionId}/report`),
     submitReview:    (sessionId, data)      => api.patch(`/proctoring/${sessionId}/review`, data),
-    getActiveSessions: ()                   => api.get ('/proctoring/active'),
+    getActiveSessions: (examId)             => api.get('/proctoring/active', { params: examId ? { examId } : {} }),
+    // Find an existing active session for an exam (used for 409 recovery)
+    getSessionForExam: (examId)             => api.get('/proctoring/active', { params: { examId } }).then(r => {
+        const sessions = r.data?.data || [];
+        return sessions[0] || null;
+    }),
 };
 
 export const verificationAPI = {

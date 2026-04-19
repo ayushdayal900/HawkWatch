@@ -157,9 +157,9 @@ export default function ExamRoomPage() {
                     </div>
                 </div>
 
-                <div className="exam-layout" style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 0, overflow: 'hidden' }}>
+                <div className="exam-layout" style={{ flex: 1, display: 'flex', flexWrap: 'wrap', overflow: 'hidden' }}>
                     {/* Question pane */}
-                    <div style={{ padding: '2rem', overflowY: 'auto' }}>
+                    <div style={{ flex: '1 1 320px', padding: '1.5rem', overflowY: 'auto' }}>
                         {/* Question nav */}
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
                             {questions.map((_, i) => (
@@ -228,7 +228,7 @@ export default function ExamRoomPage() {
                     </div>
 
                     {/* Proctoring panel */}
-                    <div style={{ background: '#0d1424', borderLeft: '1px solid rgba(255,255,255,0.06)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '1.25rem', overflowY: 'auto' }}>
+                    <div style={{ flex: '0 0 320px', background: '#0d1424', borderLeft: '1px solid rgba(255,255,255,0.06)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '1.25rem', overflowY: 'auto' }}>
                         <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
                             Proctoring Monitor
                         </div>

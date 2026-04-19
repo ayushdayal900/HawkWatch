@@ -58,9 +58,8 @@ export default function SettingsPage() {
 
     return (
         <Layout>
-            <div className="animate-fade-in" style={{ width: '100%', maxWidth: '800px' }}>
-
-                <div style={{ maxWidth: 800 }}>
+            <div className="animate-fade-in">
+                <div style={{ maxWidth: 760 }}>
                     {/* Public Profile Section */}
                     <div className="card" style={{ marginBottom: '2rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
@@ -135,7 +134,7 @@ export default function SettingsPage() {
                                 />
                             </div>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--n-700)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>New Password</label>
                                     <input 

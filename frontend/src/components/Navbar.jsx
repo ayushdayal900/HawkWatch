@@ -44,6 +44,8 @@ export default function Navbar() {
         overflow: 'hidden', animation: 'fade-up 0.2s ease-out'
     };
 
+    const DROPDOWN_CLASS = 'navbar-dropdown-right';
+
     return (
         <header style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -119,7 +121,7 @@ export default function Navbar() {
                     </button>
 
                     {showNotifs && (
-                        <div style={DROPDOWN_STYLE}>
+                        <div style={DROPDOWN_STYLE} className={DROPDOWN_CLASS}>
                             <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--n-50)' }}>
                                 <span style={{ fontWeight: 800, fontSize: '0.875rem', color: 'var(--n-900)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Alerts</span>
                                 <button onClick={clearAll} style={{ fontSize: '0.75rem', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -162,7 +164,7 @@ export default function Navbar() {
                     </button>
 
                     {showProfile && (
-                        <div style={DROPDOWN_STYLE}>
+                        <div style={DROPDOWN_STYLE} className={DROPDOWN_CLASS}>
                             <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', gap: '1rem', alignItems: 'center', background: 'var(--n-50)' }}>
                                 <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '1.1rem', flexShrink: 0 }}>
                                     {user?.name?.[0]?.toUpperCase()}

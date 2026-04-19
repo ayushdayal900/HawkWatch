@@ -66,7 +66,7 @@ export default function AlertLogTable({ flags = [] }) {
                                             <Clock size={12} /> {new Date(f.timestamp).toLocaleTimeString()}
                                         </td>
                                         <td style={{ padding: '0.75rem 1rem', fontWeight: 500, color: '#334155' }}>
-                                            {f.type.replace(/_/g, ' ')}
+                                            {f.type ? f.type.replace(/_/g, ' ') : 'Unknown Event'}
                                         </td>
                                         <td style={{ padding: '0.75rem 1rem' }}>
                                             <span style={{ background: colors.bg, color: colors.fg, padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>

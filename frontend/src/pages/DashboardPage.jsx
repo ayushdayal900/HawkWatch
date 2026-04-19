@@ -134,7 +134,6 @@ export default function DashboardPage() {
             { icon: Users, label: 'Total Students', value: stats?.students ?? '—', sub: 'Across organizations', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
             { icon: ShieldCheck, label: 'Active Sessions', value: stats?.active ?? '—', sub: 'Currently monitored', color: 'var(--success)', bg: 'var(--success-bg)' },
             { icon: Activity, label: 'Total Flags', value: stats?.flags ?? '—', sub: 'AI detections', color: 'var(--danger)', bg: 'var(--danger-bg)' },
-            { icon: Zap, label: 'System Health', value: '99.8%', sub: 'AI API Latency: 42ms', color: 'var(--info)', bg: 'var(--info-bg)' },
         ];
 
     return (

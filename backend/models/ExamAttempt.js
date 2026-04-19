@@ -59,7 +59,7 @@ examAttemptSchema.pre('save', async function (next) {
         const exam = await mongoose.model('Exam').findById(this.exam).select('totalMarks passingMarks');
         if (exam && exam.totalMarks > 0) {
             this.percentage = parseFloat(((this.score / exam.totalMarks) * 100).toFixed(2));
-            this.passed = this.score >= exam.passingMarks;
+            this.passed = (this.score >= exam.passingMarks) || (this.percentage >= exam.passingMarks);
         }
     }
     next();

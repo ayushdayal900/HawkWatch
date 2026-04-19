@@ -9,25 +9,22 @@ export default function Layout({ children }) {
         <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
             {/* Overlay for mobile */}
             {sidebarOpen && (
-                <div 
-                    className="sidebar-overlay show-mobile" 
+                <div
+                    className="sidebar-overlay"
                     onClick={toggleSidebar}
                     style={{ zIndex: 998 }}
                 />
             )}
-            
+
             <Sidebar />
-            
+
             <main className="main-content" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <Navbar />
-                <div className="content-container animate-fade-in" style={{ 
-                    padding: '1.5rem var(--page-px, 2rem) 2rem',
-                    maxWidth: '1600px',
-                    margin: '0 auto'
-                }}>
+                <div className="content-container animate-fade-in">
                     {children}
                 </div>
             </main>
         </div>
     );
 }
+

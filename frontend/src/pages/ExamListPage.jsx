@@ -180,7 +180,7 @@ export default function ExamListPage() {
         <Layout>
             <div className="animate-fade-in">
                 {/* Toolbar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }} className="toolbar-row">
                     <div style={{ display: 'flex', gap: '1rem', flex: 1, maxWidth: 600 }}>
                         <div style={{ position: 'relative', flex: 1 }}>
                             <Search size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--n-400)' }} />
@@ -245,8 +245,8 @@ export default function ExamListPage() {
                             <ExamCard key={exam._id} exam={exam} onTake={handleTake} />
                         ))}
                     </div>
-                ) : (
-                    <div className="card animate-fade-up" style={{ padding: 0, overflow: 'hidden' }}>
+                                ) : (
+                    <div className="table-responsive card animate-fade-up" style={{ padding: 0, overflow: 'hidden' }}>
                         <ExamTable
                             exams={filtered}
                             onPublish={handlePublish}

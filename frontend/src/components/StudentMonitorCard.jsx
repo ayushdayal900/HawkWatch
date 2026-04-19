@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Activity, ShieldAlert, Clock, ChevronRight } from 'lucide-react';
+import { Activity, ShieldAlert, Clock, ChevronRight, CameraOff } from 'lucide-react';
 
-function getRiskConfig(score) {
-    if (score >= 75) return { color: '#EF4444', bg: '#FEF2F2', label: 'Critical', cls: 'risk-critical' };
-    if (score >= 50) return { color: '#F97316', bg: '#FFF7ED', label: 'High',     cls: 'risk-high' };
-    if (score >= 25) return { color: '#F59E0B', bg: '#FFFBEB', label: 'Medium',   cls: 'risk-medium' };
-    return            { color: '#10B981', bg: '#ECFDF5', label: 'Low',      cls: 'risk-low' };
+function getRiskConfig(score, statusStr) {
+    if (statusStr === 'cheating') return { color: '#EF4444', bg: '#FEF2F2', label: 'CHEATING', cls: 'risk-critical' };
+    if (statusStr === 'warning') return { color: '#F97316', bg: '#FFF7ED', label: 'WARNING', cls: 'risk-high' };
+    if (score >= 25) return { color: '#F59E0B', bg: '#FFFBEB', label: 'Warning',   cls: 'risk-medium' };
+    return { color: '#10B981', bg: '#ECFDF5', label: 'SAFE', cls: 'risk-low' };
 }
 
-export default function StudentMonitorCard({ session, student, riskScore = 0, flagCount = 0, lastFlag, onExpand }) {
+export default function StudentMonitorCard({ session, student, riskScore = 0, flagCount = 0, lastFlag, liveFrame, onExpand }) {
     const [pulse, setPulse] = useState(false);
-    const risk = getRiskConfig(riskScore);
+    const risk = getRiskConfig(riskScore, session?.status);
 
     useEffect(() => {
         if (lastFlag) {
@@ -66,11 +66,40 @@ export default function StudentMonitorCard({ session, student, riskScore = 0, fl
 
                 {/* Risk score */}
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94A3B8' }}>Risk</div>
+                    <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: risk.color }}>{risk.label}</div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 800, lineHeight: 1, color: risk.color, letterSpacing: '-0.03em' }}>
                         {Math.round(riskScore)}
                         <span style={{ fontSize: '0.7rem', fontWeight: 600, opacity: 0.7 }}>/100</span>
                     </div>
+                </div>
+            </div>
+
+            {/* Live Feed Preview */}
+            <div style={{
+                position: 'relative',
+                height: 160,
+                background: '#0F172A',
+                borderRadius: 10,
+                overflow: 'hidden',
+                marginBottom: '0.875rem',
+                border: `1px solid ${risk.color}33`,
+            }}>
+                {liveFrame ? (
+                    <img 
+                        src={`data:image/jpeg;base64,${liveFrame}`} 
+                        alt="Live Stream" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
+                ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#475569', gap: 8 }}>
+                        <CameraOff size={24} color="#334155" />
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>No Signal</span>
+                    </div>
+                )}
+                
+                <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,0,0,0.5)', borderRadius: 99, padding: '2px 8px', backdropFilter: 'blur(4px)' }}>
+                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: liveFrame ? '#10B981' : '#EF4444', animation: liveFrame ? 'pulse 2s infinite' : 'none' }} />
+                   <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#fff' }}>{liveFrame ? 'LIVE' : 'OFFLINE'}</span>
                 </div>
             </div>
 

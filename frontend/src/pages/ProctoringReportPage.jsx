@@ -62,8 +62,8 @@ export default function ProctoringReportPage() {
 
     return (
         <Layout>
-            <div className="animate-fade-in" style={{ width: '100%', maxWidth: 1000, margin: '0 auto', fontFamily: 'Inter, sans-serif' }}>
-            <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+            <div className="animate-fade-in" style={{ width: '100%', fontFamily: 'Inter, sans-serif' }}>
+            <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <Link to="/examiner" style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', textDecoration: 'none', fontWeight: 600 }}>
                     <ArrowLeft size={16} /> Back to Dashboard
                 </Link>
@@ -80,7 +80,7 @@ export default function ProctoringReportPage() {
             </div>
 
             {/* Header Identity */}
-            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: '2rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                     <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F1F5F9', border: '2px solid #E2E8F0', overflow: 'hidden' }}>
                         {student?.avatar ? (

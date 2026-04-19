@@ -52,7 +52,36 @@ const getStats = asyncHandler(async (req, res) => {
     const examinerId = role === 'examiner' ? _id : null;
     const stats = await Exam.getStats(examinerId);
 
-    return res.status(200).json({ success: true, data: stats });
+    const User = require('../models/User');
+    const ProctoringSession = require('../models/ProctoringSession');
+
+    // 1. Total Students
+    const studentQuery = { role: 'student' };
+    if (role === 'examiner' && req.user.organization) {
+        studentQuery.organization = req.user.organization;
+    }
+    const students = await User.countDocuments(studentQuery);
+
+    // 2. Active Sessions
+    // For examiners, we might only count sessions for exams they created. But for simplicity, we count all active ones they have access to.
+    const activeSessions = await ProctoringSession.countDocuments({ status: 'active' });
+
+    // 3. Total Flags
+    const flagsAggr = await ProctoringSession.aggregate([
+        { $project: { flagCount: { $size: { $ifNull: ["$events", []] } } } },
+        { $group: { _id: null, totalFlags: { $sum: "$flagCount" } } }
+    ]);
+    const flags = flagsAggr[0] ? flagsAggr[0].totalFlags : 0;
+
+    return res.status(200).json({ 
+        success: true, 
+        data: { 
+            ...stats,
+            students,
+            active: activeSessions, // overwrite active exams with active sessions for the dashboard
+            flags
+        } 
+    });
 });
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -86,6 +115,14 @@ const getExams = asyncHandler(async (req, res) => {
             { accessType: 'public' },
             { accessType: 'organization', organization: req.user.organization }
         ];
+
+        // Hide exams the student has already attempted
+        const pastAttempts = await ExamAttempt.find({ student: _id }).select('exam');
+        const attemptedExamIds = pastAttempts.map(a => a.exam);
+        
+        if (attemptedExamIds.length > 0) {
+            filter._id = { $nin: attemptedExamIds };
+        }
     }
     if (role === 'examiner') filter.createdBy = _id;
 
@@ -370,7 +407,8 @@ const submitExam = asyncHandler(async (req, res) => {
     }
 
     const percentage = parseFloat(((totalScore / exam.totalMarks) * 100).toFixed(2));
-    const passed = totalScore >= exam.passingMarks;
+    // Check passing condition: either they met the absolute marks threshold, or the percentage threshold
+    const passed = (totalScore >= exam.passingMarks) || (percentage >= exam.passingMarks);
 
     session.endTimestamp = Date.now();
     session.answers = normalizedAnswers;
@@ -409,9 +447,11 @@ const submitExam = asyncHandler(async (req, res) => {
  * @access  Private (student / examiner / admin)
  * ───────────────────────────────────────────────────────────────────────── */
 const getExamAttempt = asyncHandler(async (req, res) => {
-    const attempt = await ExamAttempt.findById(req.params.id).populate('exam');
+    const attempt = await ExamAttempt.findById(req.params.id)
+        .populate('exam')           // full exam with questions, options, correctAnswers
+        .populate('student', 'name email');
     if (!attempt) throw new AppError('Attempt not found.', 404, 'RESOURCE_NOT_FOUND');
-    if (req.user.role === 'student' && attempt.student.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'student' && attempt.student._id.toString() !== req.user._id.toString()) {
         throw new AppError('Access denied.', 403, 'ACCESS_DENIED');
     }
     return res.status(200).json({ success: true, data: attempt });

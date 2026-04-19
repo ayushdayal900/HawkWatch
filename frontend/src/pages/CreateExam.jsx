@@ -282,7 +282,7 @@ export default function CreateExam() {
         <Layout>
             <div className="animate-fade-in">
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem', maxWidth: 1200, margin: '0 auto', alignItems: 'start' }}>
+                <div className="create-exam-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem', alignItems: 'start' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         <Section title="General Information" icon={LayoutIcon}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -309,6 +309,20 @@ export default function CreateExam() {
                                 <div>
                                     <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Instructions</label>
                                     <textarea className="input" rows={3} value={form.instructions} onChange={e => setField('instructions', e.target.value)} placeholder="Rules and guidelines for candidates..." />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.25rem' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: 8, fontSize: '0.75rem', fontWeight: 700, color: 'var(--n-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Access Type</label>
+                                        <select className="input" value={form.accessType} onChange={e => setField('accessType', e.target.value)}>
+                                            <option value="public">Public (All Students)</option>
+                                            <option value="organization">My Organization Only</option>
+                                        </select>
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--n-500)', marginTop: 4 }}>
+                                            {form.accessType === 'organization' 
+                                                ? 'This exam will only be visible to students within your organization.'
+                                                : 'This exam will be visible to everyone on the platform.'}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </Section>
@@ -339,7 +353,7 @@ export default function CreateExam() {
                         </Section>
                     </div>
 
-                    <div style={{ position: 'sticky', top: '2rem', height: 'fit-content', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div className="create-exam-sidebar" style={{ position: 'sticky', top: '2rem', height: 'fit-content', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         <div className="card">
                             <h4 style={{ margin: '0 0 1.25rem', fontSize: '0.9rem', fontWeight: 800, color: 'var(--n-900)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Summary Preview</h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>

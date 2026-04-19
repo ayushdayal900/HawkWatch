@@ -216,6 +216,8 @@ const RISK_WEIGHTS = {
     deepfake_detected: 10,
     phone_detected: 10,
     person_absent: 6,
+    camera_off: 40,
+    camera_blocked: 50,
 };
 
 /**

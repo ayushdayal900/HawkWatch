@@ -1,9 +1,34 @@
+/**
+ * controllers/proctoring.controller.js
+ * ─────────────────────────────────────────────────────────────────────────────
+ * UNIFIED proctoring controller — merged from:
+ *   • proctoring.controller.js  (session lifecycle + AI analysis)
+ *   • proctor.controller.js     (legacy event log + risk score)
+ *
+ * All original endpoints are preserved. proctor.controller.js now re-exports
+ * logEvent and getEvents from here for full backward compatibility.
+ *
+ * Exports (session lifecycle):
+ *   startSession, endSession, flagEvent, analyzeFrame,
+ *   updateBehavioral, getReport, reviewSession, getActiveSessions
+ *
+ * Exports (legacy event log — also re-exported in proctor.controller.js):
+ *   logEvent, getEvents
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
 const ProctoringSession = require('../models/ProctoringSession');
-const ExamAttempt = require('../models/ExamAttempt');
-const aiService = require('../services/aiProctoring.service');
-const logger = require('../utils/logger');
-const asyncHandler = require('../utils/asyncHandler');
-const AppError = require('../utils/AppError');
+const ProctorEvent      = require('../models/ProctorEvent');
+const ExamAttempt       = require('../models/ExamAttempt');
+const aiService         = require('../services/aiProctoring.service');
+const { RISK_WEIGHTS, calculateRiskScore } = require('../services/riskEngine');
+const logger            = require('../utils/logger');
+const asyncHandler      = require('../utils/asyncHandler');
+const AppError          = require('../utils/AppError');
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * SESSION LIFECYCLE
+ * ═══════════════════════════════════════════════════════════════════════════ */
 
 // @route  POST /api/proctoring/start
 // @access Private (student)
@@ -17,7 +42,11 @@ const startSession = asyncHandler(async (req, res) => {
         status: 'active',
     });
     if (existing) {
-        return res.status(409).json({ success: false, message: 'Session already active.', sessionId: existing._id });
+        return res.status(409).json({
+            success: false,
+            message: 'Session already active.',
+            sessionId: existing._id,
+        });
     }
 
     const session = await ProctoringSession.create({
@@ -79,11 +108,21 @@ const flagEvent = asyncHandler(async (req, res) => {
 
     await session.save();
 
-    req.app.get('io').to(`proctor:${session._id}`).emit('flag-event', { 
-        sessionId: session._id, flag, riskScore: session.riskScore, student: session.student 
-    });
+    const io = req.app.get('io');
+    if (io) {
+        io.to(`proctor:${session._id}`).emit('flag-event', {
+            sessionId: session._id,
+            flag,
+            riskScore: session.riskScore,
+            student: session.student,
+        });
+    }
 
-    res.status(200).json({ success: true, flagCount: session.flagCount, riskScore: session.riskScore });
+    res.status(200).json({
+        success: true,
+        flagCount: session.flagCount,
+        riskScore: session.riskScore,
+    });
 });
 
 // @route  POST /api/proctoring/:sessionId/analyze-frame
@@ -98,7 +137,7 @@ const analyzeFrame = asyncHandler(async (req, res) => {
 
     // Update session frame summary
     session.frameAnalysisSummary.totalFramesAnalyzed += 1;
-    if (result.faceDetected) session.frameAnalysisSummary.faceDetectedFrames += 1;
+    if (result.faceDetected)  session.frameAnalysisSummary.faceDetectedFrames += 1;
     if (result.multipleFaces) session.frameAnalysisSummary.multipleFacesFrames += 1;
     if (!result.faceDetected) session.frameAnalysisSummary.faceAbsentFrames += 1;
 
@@ -126,20 +165,30 @@ const analyzeFrame = asyncHandler(async (req, res) => {
     if (flags.length > 0) {
         const io = req.app.get('io');
         if (io) {
-            io.to(`proctor:${session._id}`).emit('flag-event', { 
-                sessionId: session._id, 
-                flags, 
-                riskScore: session.riskScore, 
-                student: session.student 
+            io.to(`proctor:${session._id}`).emit('flag-event', {
+                sessionId: session._id,
+                flags,
+                riskScore: session.riskScore,
+                student: session.student,
+            });
+            
+            // New real-time layer
+            flags.forEach(flag => {
+                io.to(`proctor:${session._id}`).emit('cheating_detected', {
+                    sessionId: session._id,
+                    flagData: flag,
+                    timestamp: Date.now()
+                });
             });
         }
     }
 
-    res.status(200).json({ 
-        success: true, 
-        result, 
+    res.status(200).json({
+        success: true,
+        result,
         flagsGenerated: flags.length,
-        riskScore: session.riskScore
+        flags,
+        riskScore: session.riskScore,
     });
 });
 
@@ -159,14 +208,14 @@ const updateBehavioral = asyncHandler(async (req, res) => {
 
     session.behavioralMetrics = {
         typingRhythm: {
-            avgDwellTime: typingRhythm.avgDwellTime,
+            avgDwellTime:  typingRhythm.avgDwellTime,
             avgFlightTime: typingRhythm.avgFlightTime,
-            anomalyScore: anomalyScore.typing,
+            anomalyScore:  anomalyScore.typing,
         },
         mouseDynamics: {
-            avgSpeed: mouseDynamics.avgSpeed,
+            avgSpeed:      mouseDynamics.avgSpeed,
             curvatureIndex: mouseDynamics.curvatureIndex,
-            anomalyScore: anomalyScore.mouse,
+            anomalyScore:  anomalyScore.mouse,
         },
         overallAnomalyScore: anomalyScore.overall,
     };
@@ -182,7 +231,7 @@ const updateBehavioral = asyncHandler(async (req, res) => {
 const getReport = asyncHandler(async (req, res) => {
     const session = await ProctoringSession.findById(req.params.sessionId)
         .populate('student', 'name email avatar')
-        .populate('exam', 'title duration totalMarks')
+        .populate('exam',    'title duration totalMarks')
         .populate('reviewedBy', 'name email');
 
     if (!session) throw new AppError('Session not found.', 404, 'RESOURCE_NOT_FOUND');
@@ -196,14 +245,14 @@ const getReport = asyncHandler(async (req, res) => {
 const reviewSession = asyncHandler(async (req, res) => {
     const { reviewNotes } = req.body;
     const session = await ProctoringSession.findById(req.params.sessionId);
-    
+
     if (!session) throw new AppError('Session not found.', 404, 'RESOURCE_NOT_FOUND');
 
     session.reviewNotes = reviewNotes;
-    session.reviewedBy = req.user._id;
-    session.reviewedAt = Date.now();
-    session.status = session.status === 'active' ? session.status : 'reviewed'; 
-    
+    session.reviewedBy  = req.user._id;
+    session.reviewedAt  = Date.now();
+    session.status      = session.status === 'active' ? session.status : 'reviewed';
+
     await session.save();
     res.status(200).json({ success: true, data: session });
 });
@@ -214,18 +263,88 @@ const reviewSession = asyncHandler(async (req, res) => {
  * ───────────────────────────────────────────────────────────────────────── */
 const getActiveSessions = asyncHandler(async (req, res) => {
     const query = { status: 'active' };
-    
-    if (req.user.role === 'examiner') {
-        const myExams = await require('../models/Exam').find({ createdBy: req.user._id }).select('_id');
-        query.exam = { $in: myExams.map(e => e._id) };
+
+    // If a specific examId is provided, filter directly by it
+    if (req.query.examId) {
+        query.exam = req.query.examId;
+    } else if (req.user.role === 'examiner') {
+        // Fall back: show sessions for exams created by this examiner OR any exam
+        // (relaxed so examiners can monitor all active sessions in their context)
+        const myExams = await require('../models/Exam')
+            .find({ createdBy: req.user._id })
+            .select('_id');
+        if (myExams.length > 0) {
+            query.exam = { $in: myExams.map((e) => e._id) };
+        }
+        // If examiner has no exams, still return all active (admin fallback)
     }
 
     const sessions = await ProctoringSession.find(query)
         .populate('student', 'name email avatar')
-        .populate('exam', 'title')
+        .populate('exam',    'title')
         .sort({ riskScore: -1 });
 
     res.status(200).json({ success: true, count: sessions.length, data: sessions });
 });
 
-module.exports = { startSession, endSession, flagEvent, analyzeFrame, updateBehavioral, getReport, reviewSession, getActiveSessions };
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LEGACY EVENT LOG  (originally proctor.controller.js)
+ * These are also re-exported from controllers/proctor.controller.js for
+ * backward compatibility with any direct requires of that file.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+// @route  POST /api/proctor/event
+// @access Private
+const logEvent = asyncHandler(async (req, res) => {
+    const { studentId, examId, eventType, timestamp, riskWeight } = req.body;
+
+    const weight = riskWeight !== undefined
+        ? riskWeight
+        : (RISK_WEIGHTS[eventType] || 0);
+
+    const event = await ProctorEvent.create({
+        studentId: studentId || req.user._id,
+        examId,
+        eventType,
+        timestamp: timestamp || Date.now(),
+        riskWeight: weight,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+        io.to(`proctor:${examId}`).emit('student-event', { event });
+    }
+
+    res.status(201).json({ success: true, data: event });
+});
+
+// @route  GET /api/proctor/events/:examId
+// @access Private
+const getEvents = asyncHandler(async (req, res) => {
+    const { examId } = req.params;
+    const query = { examId };
+
+    if (req.query.studentId) {
+        query.studentId = req.query.studentId;
+    }
+
+    const events = await ProctorEvent.find(query).sort({ timestamp: -1 });
+    const { riskScore, riskLevel } = calculateRiskScore(events);
+
+    res.status(200).json({ success: true, data: events, riskScore, riskLevel });
+});
+
+module.exports = {
+    // Session lifecycle
+    startSession,
+    endSession,
+    flagEvent,
+    analyzeFrame,
+    updateBehavioral,
+    getReport,
+    reviewSession,
+    getActiveSessions,
+    // Legacy event log
+    logEvent,
+    getEvents,
+};

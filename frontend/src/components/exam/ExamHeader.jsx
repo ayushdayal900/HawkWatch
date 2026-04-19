@@ -1,10 +1,13 @@
 import { Clock, AlertTriangle } from 'lucide-react';
+import useProctoringStore from '../../store/proctoringStore';
+import RiskScoreBadge from '../RiskScoreBadge';
 
 export default function ExamHeader({ currentQ, totalQ, timeLeft, formatTime }) {
     const urgent  = timeLeft < 300;
     const warning = timeLeft < 600;
 
-    const timerClass = urgent ? 'timer-danger' : warning ? 'timer-warning' : 'timer-normal';
+    const riskScore = useProctoringStore(s => s.riskScore);
+    const riskLevel = riskScore >= 75 ? 'HIGH' : riskScore >= 40 ? 'MEDIUM' : 'LOW';
 
     return (
         <div className="exam-topbar">
@@ -31,25 +34,29 @@ export default function ExamHeader({ currentQ, totalQ, timeLeft, formatTime }) {
                 </div>
             </div>
 
-            {/* Timer */}
-            <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '0.5rem 1rem',
-                borderRadius: 99,
-                fontWeight: 800,
-                fontSize: '1.15rem',
-                letterSpacing: '-0.02em',
-                transition: 'all 0.3s',
-                ...(urgent
-                    ? { background: '#FEF2F2', color: '#DC2626', border: '1.5px solid #FECACA' }
-                    : warning
-                        ? { background: '#FFFBEB', color: '#D97706', border: '1.5px solid #FDE68A' }
-                        : { background: '#F1F5F9', color: '#334155', border: '1.5px solid #E2E8F0' }
-                )
-            }}>
-                {urgent && <AlertTriangle size={16} />}
-                <Clock size={16} />
-                {formatTime(timeLeft)}
+            {/* Right side: risk badge + timer */}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <RiskScoreBadge score={Math.round(riskScore)} level={riskLevel} />
+
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '0.5rem 1rem',
+                    borderRadius: 99,
+                    fontWeight: 800,
+                    fontSize: '1.15rem',
+                    letterSpacing: '-0.02em',
+                    transition: 'all 0.3s',
+                    ...(urgent
+                        ? { background: '#FEF2F2', color: '#DC2626', border: '1.5px solid #FECACA' }
+                        : warning
+                            ? { background: '#FFFBEB', color: '#D97706', border: '1.5px solid #FDE68A' }
+                            : { background: '#F1F5F9', color: '#334155', border: '1.5px solid #E2E8F0' }
+                    )
+                }}>
+                    {urgent && <AlertTriangle size={16} />}
+                    <Clock size={16} />
+                    {formatTime(timeLeft)}
+                </div>
             </div>
         </div>
     );

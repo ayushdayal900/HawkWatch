@@ -25,7 +25,8 @@ const {
     updateProfile,
 } = require('../controllers/auth.controller');
 
-const { protect } = require('../middleware/auth');
+const { protect }     = require('../middleware/auth');
+const { authLimiter } = require('../middleware/rateLimiters');
 
 /* ─── Validation rule-sets ─────────────────────────────────────────────── */
 
@@ -76,10 +77,10 @@ const validateRefresh = [
 
 /* ─── Routes ───────────────────────────────────────────────────────────── */
 
-// Public
-router.post('/register', validateRegister, register);
-router.post('/login',    validateLogin,    login);
-router.post('/refresh',  validateRefresh,  refreshToken);
+// Public (rate-limited)
+router.post('/register', authLimiter, validateRegister, register);
+router.post('/login',    authLimiter, validateLogin,    login);
+router.post('/refresh',  authLimiter, validateRefresh,  refreshToken);
 
 // Private
 router.get ('/me',     protect, getMe);
