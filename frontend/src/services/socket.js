@@ -80,6 +80,30 @@ class SocketService {
         }
     }
 
+    joinDashboard() {
+        const emitJoin = () => {
+            if (this.socket && this.socket.connected) {
+                this.socket.emit('dashboard_join');
+            }
+        };
+        if (this.socket) {
+            if (this.socket.connected) emitJoin();
+            else this.socket.once('connect', emitJoin);
+        }
+    }
+
+    onStatsUpdate(callback) {
+        if (this.socket) {
+            this.socket.on('stats_update', callback);
+        }
+    }
+
+    offStatsUpdate(callback) {
+        if (this.socket) {
+            this.socket.off('stats_update', callback);
+        }
+    }
+
     getSocket() {
         return this.socket;
     }

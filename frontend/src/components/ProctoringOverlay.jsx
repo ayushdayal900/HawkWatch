@@ -46,6 +46,9 @@ export default function ProctoringOverlay({ sessionId, examId, onSessionTerminat
             connectSocket(token, 'student', sessionId);
             socketService.connect(token);
             socketService.joinSession(sessionId, 'student');
+            
+            // Notify dashboard of session start
+            socketService.getSocket()?.emit('session_start', { sessionId });
         }
         return () => {
             disconnectSocket();

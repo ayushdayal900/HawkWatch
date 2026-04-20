@@ -11,6 +11,8 @@ import { useEffect, useState, useMemo } from 'react';
 import useAuthStore from '../store/authStore';
 import useUIStore from '../store/uiStore';
 import Layout from '../components/Layout';
+import { examAPI } from '../services/api';
+import socketService from '../services/socket';
 import {
     BarChart3, Users, BookOpen, ShieldCheck, TrendingUp,
     Clock, CheckCircle, FileText, ChevronRight, Activity, Zap
@@ -97,44 +99,63 @@ const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const emptyChart = WEEK_DAYS.map((d) => ({ date: d, attempts: 0, flags: 0 }));
 
 export default function DashboardPage() {
-    const { user, isStudent } = useAuthStore();
+    const { user, isStudent, token } = useAuthStore();
     const [stats, setStats] = useState(null);
     const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const { setPageTitle } = useUIStore();
 
+    const fetchData = async () => {
+        try {
+            const promises = [examAPI.getStats(), examAPI.getAll()];
+            if (isStudent) promises.push(examAPI.getHistory());
+
+            const res = await Promise.all(promises);
+            setStats(res[0].data.data);
+            setExams(isStudent ? (res[2]?.data?.data || []) : (res[1]?.data?.data || []));
+        } catch (err) {
+            console.error('Failed to fetch dashboard data', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         setPageTitle('Dashboard');
-        const fetchData = async () => {
-            try {
-                const promises = [examAPI.getStats(), examAPI.getAll()];
-                if (isStudent) promises.push(examAPI.getHistory());
-
-                const res = await Promise.all(promises);
-                setStats(res[0].data.data);
-                setExams(isStudent ? (res[2]?.data?.data || []) : (res[1]?.data?.data || []));
-            } catch {
-                // Graceful degradation
-            } finally {
-                setLoading(false);
-            }
-        };
         fetchData();
-    }, [isStudent]);
+
+        // Setup real-time updates for examiners
+        if (!isStudent && token) {
+            socketService.connect(token);
+            socketService.joinDashboard();
+            
+            const handleUpdate = () => {
+                fetchData(); // Refresh stats on relevant events
+            };
+            
+            socketService.onStatsUpdate(handleUpdate);
+            return () => socketService.offStatsUpdate(handleUpdate);
+        }
+    }, [isStudent, token]);
 
     const statCards = isStudent
         ? [
-            { icon: BookOpen, label: 'Total Attempts', value: stats?.total ?? '—', sub: 'Completed exams', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
-            { icon: CheckCircle, label: 'Success Rate', value: stats?.total ? `${Math.round((stats.passed / stats.total) * 100)}%` : '—', sub: `${stats?.passed || 0} exams passed`, color: 'var(--success)', bg: 'var(--success-bg)' },
-            { icon: Clock, label: 'Avg. Score', value: stats?.avgScore ?? '—', sub: 'Across all tests', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-            { icon: FileText, label: 'Open Exams', value: stats?.available ?? '—', sub: 'Available to take', color: 'var(--info)', bg: 'var(--info-bg)' },
+            { icon: BookOpen, label: 'Total Attempts', value: stats?.total ?? '0', sub: 'Completed exams', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
+            { icon: CheckCircle, label: 'Success Rate', value: stats?.total ? `${Math.round((stats.passed / stats.total) * 100)}%` : '0%', sub: `${stats?.passed || 0} exams passed`, color: 'var(--success)', bg: 'var(--success-bg)' },
+            { icon: Clock, label: 'Avg. Score', value: stats?.avgScore ?? '0', sub: 'Across all tests', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+            { icon: FileText, label: 'Open Exams', value: stats?.available ?? '0', sub: 'Available to take', color: 'var(--info)', bg: 'var(--info-bg)' },
         ]
         : [
-            { icon: Users, label: 'Total Students', value: stats?.students ?? '—', sub: 'Across organizations', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
-            { icon: ShieldCheck, label: 'Active Sessions', value: stats?.active ?? '—', sub: 'Currently monitored', color: 'var(--success)', bg: 'var(--success-bg)' },
-            { icon: Activity, label: 'Total Flags', value: stats?.flags ?? '—', sub: 'AI detections', color: 'var(--danger)', bg: 'var(--danger-bg)' },
+            { icon: BookOpen, label: 'Total Attempts', value: stats?.totalAttempts ?? '0', sub: 'Across all exams', color: 'var(--brand-500)', bg: 'var(--brand-50)' },
+            { icon: ShieldCheck, label: 'Active Sessions', value: stats?.active ?? '0', sub: 'Currently monitored', color: 'var(--success)', bg: 'var(--success-bg)' },
+            { icon: Activity, label: 'Total Flags', value: stats?.flags ?? '0', sub: 'AI detections', color: 'var(--danger)', bg: 'var(--danger-bg)' },
+            { icon: Users, label: 'Total Students', value: stats?.students ?? '0', sub: 'In your organization', color: 'var(--info)', bg: 'var(--info-bg)' },
         ];
+
+    const chartData = useMemo(() => {
+        return stats?.graphData || emptyChart;
+    }, [stats]);
 
     return (
         <Layout>
@@ -188,11 +209,15 @@ export default function DashboardPage() {
                         </div>
 
                         <ResponsiveContainer width="100%" height={260}>
-                            <AreaChart data={emptyChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorAttempts" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="var(--brand-500)" stopOpacity={0.15} />
                                         <stop offset="95%" stopColor="var(--brand-500)" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="colorFlags" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="var(--danger)" stopOpacity={0.1} />
+                                        <stop offset="95%" stopColor="var(--danger)" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
@@ -217,6 +242,7 @@ export default function DashboardPage() {
                                     }}
                                 />
                                 <Area
+                                    name="Attempts"
                                     type="monotone"
                                     dataKey="attempts"
                                     stroke="var(--brand-500)"
@@ -224,6 +250,17 @@ export default function DashboardPage() {
                                     fillOpacity={1}
                                     fill="url(#colorAttempts)"
                                 />
+                                {!isStudent && (
+                                    <Area
+                                        name="Flags"
+                                        type="monotone"
+                                        dataKey="flags"
+                                        stroke="var(--danger)"
+                                        strokeWidth={3}
+                                        fillOpacity={1}
+                                        fill="url(#colorFlags)"
+                                    />
+                                )}
                             </AreaChart>
                         </ResponsiveContainer>
                         <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: 8, background: 'var(--n-50)', textAlign: 'center' }}>

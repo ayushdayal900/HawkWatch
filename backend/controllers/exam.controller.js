@@ -36,50 +36,116 @@ const toObjectId = (id) => {
  * @access  Private — examiner/admin see own stats; student sees personal stats
  * ───────────────────────────────────────────────────────────────────────── */
 const getStats = asyncHandler(async (req, res) => {
-    const { role, _id } = req.user;
+    const { role, _id, organization } = req.user;
+
+    // Helper for last 7 days labels
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const last7Days = [];
+    const dateRange = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - i);
+        last7Days.push(days[d.getDay()]);
+        dateRange.push(new Date(d));
+    }
+    const startDate = dateRange[0];
 
     if (role === 'student') {
-        const [total, passed] = await Promise.all([
+        const [total, passed, history, available] = await Promise.all([
             ExamAttempt.countDocuments({ student: _id }),
             ExamAttempt.countDocuments({ student: _id, passed: true }),
+            ExamAttempt.find({ student: _id, createdAt: { $gte: startDate } }).select('score createdAt'),
+            Exam.countDocuments({
+                status: 'published',
+                $or: [
+                    { accessType: 'public' },
+                    { accessType: 'organization', organization: organization }
+                ],
+                _id: { $nin: await ExamAttempt.find({ student: _id }).distinct('exam') }
+            })
         ]);
+
+        const allAttempts = await ExamAttempt.find({ student: _id }).select('score');
+        const avgScore = allAttempts.length > 0 
+            ? (allAttempts.reduce((acc, curr) => acc + curr.score, 0) / allAttempts.length).toFixed(1)
+            : 0;
+
+        // Process graph data
+        const graphData = dateRange.map((date, i) => {
+            const dayStr = last7Days[i];
+            const nextDate = new Date(date);
+            nextDate.setDate(nextDate.getDate() + 1);
+            
+            const dayAttempts = history.filter(h => h.createdAt >= date && h.createdAt < nextDate).length;
+            return { date: dayStr, attempts: dayAttempts, flags: 0 };
+        });
+
         return res.status(200).json({
             success: true,
-            data: { total, passed, failed: total - passed, published: 0, draft: 0, active: 0 },
+            data: { 
+                total, 
+                passed, 
+                avgScore, 
+                available,
+                graphData
+            },
         });
     }
 
+    // EXAMINER / ADMIN
     const examinerId = role === 'examiner' ? _id : null;
-    const stats = await Exam.getStats(examinerId);
+    const examStats = await Exam.getStats(examinerId);
 
     const User = require('../models/User');
     const ProctoringSession = require('../models/ProctoringSession');
 
     // 1. Total Students
     const studentQuery = { role: 'student' };
-    if (role === 'examiner' && req.user.organization) {
-        studentQuery.organization = req.user.organization;
+    if (role === 'examiner' && organization) {
+        studentQuery.organization = organization;
     }
     const students = await User.countDocuments(studentQuery);
 
     // 2. Active Sessions
-    // For examiners, we might only count sessions for exams they created. But for simplicity, we count all active ones they have access to.
     const activeSessions = await ProctoringSession.countDocuments({ status: 'active' });
 
-    // 3. Total Flags
-    const flagsAggr = await ProctoringSession.aggregate([
-        { $project: { flagCount: { $size: { $ifNull: ["$events", []] } } } },
-        { $group: { _id: null, totalFlags: { $sum: "$flagCount" } } }
+    // 3. Total Flags & Attempts
+    const [flagsAggr, totalAttempts, attemptHistory, flagHistory] = await Promise.all([
+        ProctoringSession.aggregate([
+            { $project: { flagCount: { $size: { $ifNull: ["$flags", []] } } } },
+            { $group: { _id: null, totalFlags: { $sum: "$flagCount" } } }
+        ]),
+        ExamAttempt.countDocuments(examinerId ? { exam: { $in: await Exam.find({ createdBy: examinerId }).distinct('_id') } } : {}),
+        ExamAttempt.find({ createdAt: { $gte: startDate } }).select('createdAt'),
+        ProctoringSession.find({ createdAt: { $gte: startDate } }).select('createdAt flags')
     ]);
+
     const flags = flagsAggr[0] ? flagsAggr[0].totalFlags : 0;
+
+    // Process graph data for Examiner
+    const graphData = dateRange.map((date, i) => {
+        const dayStr = last7Days[i];
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+        
+        const dayAttempts = attemptHistory.filter(h => h.createdAt >= date && h.createdAt < nextDate).length;
+        const dayFlags = flagHistory
+            .filter(h => h.createdAt >= date && h.createdAt < nextDate)
+            .reduce((acc, curr) => acc + (curr.flags?.length || 0), 0);
+
+        return { date: dayStr, attempts: dayAttempts, flags: dayFlags };
+    });
 
     return res.status(200).json({ 
         success: true, 
         data: { 
-            ...stats,
+            ...examStats,
             students,
-            active: activeSessions, // overwrite active exams with active sessions for the dashboard
-            flags
+            active: activeSessions,
+            flags,
+            totalAttempts,
+            graphData
         } 
     });
 });
