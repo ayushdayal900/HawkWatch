@@ -136,3 +136,8 @@ process.on('SIGINT', async () => {
         process.exit(0);
     });
 });
+
+// Trigger nodemon restart
+
+// Export for serverless environments (like Vercel)
+module.exports = app;
